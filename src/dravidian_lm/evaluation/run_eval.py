@@ -29,7 +29,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import torch
-from transformers import AutoModelForCausalLM, T5Tokenizer, set_seed
+from transformers import AutoModelForCausalLM, AutoTokenizer, T5Tokenizer, set_seed
 
 from dravidian_lm.paths import RAW_RESULTS_DIR, SPLITS_DIR
 from dravidian_lm.evaluation.perplexity import load_texts, run_perplexity_suite
@@ -118,9 +118,14 @@ def parse_args() -> argparse.Namespace:
 
 def load_model_and_tokenizer(model_name: str, device: str):
     print(f"Loading model: {model_name}")
-    tokenizer = T5Tokenizer.from_pretrained(model_name, use_fast=False, extra_ids=0)
-    if tokenizer.pad_token is None:
-        tokenizer.add_special_tokens({"pad_token": "<pad>"})
+    if model_name == MODEL_ID:
+        tokenizer = T5Tokenizer.from_pretrained(model_name, use_fast=False, extra_ids=0)
+        if tokenizer.pad_token is None:
+            tokenizer.add_special_tokens({"pad_token": "<pad>"})
+    else:
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
 
     dtype = torch.float16 if device.startswith("cuda") else torch.float32
     model = AutoModelForCausalLM.from_pretrained(model_name, dtype=dtype)
