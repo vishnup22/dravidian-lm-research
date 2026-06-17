@@ -172,14 +172,18 @@ def run_indicsentiment(
             max_length=DOWNSTREAM_MAX_LEN,
             padding=False,
         )
-        enc["labels"] = examples[label_col]
+        raw = examples[label_col]
+        # Flatten nested lists: [[0],[1],...] -> [0,1,...]
+        enc["labels"] = [r[0] if isinstance(r, list) else int(r) for r in raw]
         return enc
 
     cols = ds["train"].column_names
     tokenized = ds.map(preprocess, batched=True, remove_columns=cols)
     tokenized.set_format("torch")
 
-    num_labels = len(set(ds["train"][label_col]))
+    raw_labels = ds["train"][label_col]
+    flat_labels = [r[0] if isinstance(r, list) else int(r) for r in raw_labels]
+    num_labels = len(set(flat_labels))
     model = _load_seq_clf_model(model_name, num_labels, tokenizer.pad_token_id)
 
     def compute_metrics(eval_pred):
@@ -393,5 +397,10 @@ def run_downstream_suite(
             except Exception as exc:
                 print(f"  [downstream] {task_name} | {model}: FAILED — {exc}")
                 results[task_name][model] = {"error": str(exc)}
+            finally:
+                import gc
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
 
     return results
