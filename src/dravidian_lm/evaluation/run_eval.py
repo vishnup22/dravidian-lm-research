@@ -25,7 +25,7 @@ import argparse
 import json
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import torch
@@ -182,7 +182,7 @@ def main() -> None:
         "model": args.model_name,
         "language": args.language,
         "language_code": args.language_code,
-        "evaluation_date": datetime.utcnow().isoformat() + "Z",
+        "evaluation_date": datetime.now(timezone.utc).isoformat(),
         "device": device,
         "seed": args.seed,
     }
