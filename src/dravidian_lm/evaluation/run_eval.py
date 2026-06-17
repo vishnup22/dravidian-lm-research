@@ -123,7 +123,7 @@ def load_model_and_tokenizer(model_name: str, device: str):
         tokenizer.add_special_tokens({"pad_token": "<pad>"})
 
     dtype = torch.float16 if device.startswith("cuda") else torch.float32
-    model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=dtype)
+    model = AutoModelForCausalLM.from_pretrained(model_name, dtype=dtype)
     model.to(device)
     model.eval()
 
