@@ -1,0 +1,9 @@
+architecture: gpt2
+context_length: 1024
+vocab_size: 32000
+n_embd: 768
+n_layer: 12
+n_head: 12
+n_inner: 3072
+activation_function: gelu_new
+dropout: 0.1

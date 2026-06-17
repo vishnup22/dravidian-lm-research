@@ -1,11 +1,10 @@
-clean_data/
-data/
-models/
-tokenizers/
+data/raw/
+data/processed/
+data/splits/
+artifacts/
 logs/
 *.bin
 *.safetensors
-*.txt
 __pycache__/
 *.pyc
 .ipynb_checkpoints/

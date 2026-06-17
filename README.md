@@ -1,27 +1,58 @@
 # Dravidian LM Research
 
-Research codebase for pretraining and evaluating language models for Dravidian languages, with an initial focus on monolingual GPT-2 models for Telugu, Kannada, Tamil, and Malayalam.
+Research repository for Dravidian language model pretraining, tokenization, and benchmarking across architectures.
 
+This repo is organized as a research artifact rather than a one-off training folder. It is intended to support paper-grade experiments on Dravidian languages with a reproducible pipeline for data preparation, tokenizer training, model training, and result tracking.
 
+## Topics
 
-## Scope
+`dravidian-languages`, `language-modeling`, `pretraining`, `nlp`, `transformers`, `huggingface`, `gpt2`, `tokenization`, `low-resource-languages`, `computational-linguistics`
 
-This repository is intended for research experiments on:
+## Research Scope
 
-- corpus collection and cleaning for Dravidian languages
-- train/validation/test dataset preparation
-- monolingual and joint tokenizer training
-- causal language model pretraining
-- cross-model and cross-language comparison for a paper workflow
+Current focus:
 
-The current pipeline is designed so additional architectures can be added without renaming or restructuring the project.
+- monolingual language modeling for Telugu, Kannada, Tamil, and Malayalam
+- corpus collection from CC100, Wikipedia, Samanantar, and TinyStories
+- SentencePiece tokenizer training
+- GPT-2 pretraining as the first implemented architecture
+- result logging for cross-language and cross-run comparison
 
-## Languages
+Planned direction:
 
-- Telugu
-- Kannada
-- Tamil
-- Malayalam
+- additional architectures beyond GPT-2
+- broader evaluation and benchmarking
+- config-driven experiment execution
+
+## Repository Layout
+
+```text
+.
+|-- README.md
+|-- requirements.txt
+|-- configs/
+|-- docs/
+|-- notebooks/
+|-- results/
+|   `-- raw/
+|-- scripts/
+`-- src/
+    `-- dravidian_lm/
+        |-- analysis/
+        |-- data/
+        |-- models/
+        `-- tokenization/
+```
+
+## Key Paths
+
+- [src/dravidian_lm/data](./src/dravidian_lm/data): corpus download, cleaning, and splitting
+- [src/dravidian_lm/tokenization](./src/dravidian_lm/tokenization): tokenizer training
+- [src/dravidian_lm/models/gpt2](./src/dravidian_lm/models/gpt2): GPT-2 training
+- [src/dravidian_lm/analysis](./src/dravidian_lm/analysis): result summarization
+- [scripts/train_gpt.sh](./scripts/train_gpt.sh): cluster launcher
+- [docs/reproducibility.md](./docs/reproducibility.md): execution and layout notes
+- [configs](./configs): experiment templates for future config-driven runs
 
 ## Current Models
 
@@ -29,45 +60,15 @@ The current pipeline is designed so additional architectures can be added withou
 - Kannada: [pulipakav-1/dravidian-gpt2-kannada](https://huggingface.co/pulipakav-1/dravidian-gpt2-kannada)
 - Malayalam: training in progress
 
-## Repository Structure
-
-- [download_data.py](./download_data.py): download raw corpora from CC100, Wikipedia, Samanantar, and TinyStories
-- [clean.py](./clean.py): clean and merge raw text sources
-- [split.py](./split.py): create train/validation/test splits
-- [tokenizer_utils.py](./tokenizer_utils.py): train monolingual and joint SentencePiece tokenizers
-- [train_gpt2.py](./train_gpt2.py): pretrain GPT-2 language models and save evaluation logs
-- [hindi.sh](./hindi.sh): multi-GPU cluster launch script for training runs
-- [results](./results): saved experiment metrics
-
-## Data Pipeline
-
-1. Download corpora for each language.
-2. Clean and merge the raw text.
-3. Split the processed data into train, validation, and test sets.
-4. Train language-specific or joint tokenizers.
-5. Pretrain language models.
-6. Record evaluation loss and perplexity for comparison across runs.
-
-## Training Setup
-
-The current training code uses:
-
-- Hugging Face `transformers`
-- Hugging Face `datasets`
-- SentencePiece tokenization
-- multi-GPU launch with `accelerate`
-
-The initial implemented architecture is GPT-2, but the repository is meant to support additional architectures for the research paper.
-
 ## Current Results
 
-Available result files:
+Tracked raw outputs:
 
-- [results/telugu_seed1.json](./results/telugu_seed1.json)
-- [results/telugu_seed2.json](./results/telugu_seed2.json)
-- [results/kannada_seed1.json](./results/kannada_seed1.json)
+- [results/raw/telugu_seed1.json](./results/raw/telugu_seed1.json)
+- [results/raw/telugu_seed2.json](./results/raw/telugu_seed2.json)
+- [results/raw/kannada_seed1.json](./results/raw/kannada_seed1.json)
 
-Sample reported metrics from current runs:
+Sample metrics:
 
 | Language | Run | Eval Loss | Perplexity |
 | --- | --- | ---: | ---: |
@@ -75,8 +76,32 @@ Sample reported metrics from current runs:
 | Telugu | seed2 | 3.7635 | 43.10 |
 | Kannada | seed1 | 3.9794 | 53.49 |
 
+## Reproducibility
+
+Set up the environment:
+
+```bash
+pip install -r requirements.txt
+export PYTHONPATH=src
+export DRAVIDIAN_LM_BASE=$PWD
+```
+
+Run the pipeline:
+
+```bash
+python -m dravidian_lm.data.download --lang te
+python -m dravidian_lm.data.clean --lang te
+python -m dravidian_lm.data.split --lang te
+python -m dravidian_lm.tokenization.train_tokenizer --lang te
+python -m dravidian_lm.models.gpt2.train --language telugu --tokenizer_name te
+python -m dravidian_lm.analysis.summarize_results
+```
+
+More detail is in [docs/reproducibility.md](./docs/reproducibility.md).
+
 ## Notes
 
-- This repository currently contains research code and experiment outputs.
-- More architectures, baselines, and language coverage are expected as the paper develops.
-- Malayalam training is currently in progress.
+- large corpora, tokenizers, checkpoints, and split artifacts are intentionally git-ignored
+- experiment outputs are separated from source code
+- notebooks are kept outside the core pipeline
+- config templates are present now; wiring the runners directly to YAML is the next step

@@ -1,0 +1,13 @@
+languages:
+  - te
+  - ta
+  - kn
+  - ml
+sources:
+  - cc100
+  - wiki
+  - samanantar
+  - tinystories
+train_ratio: 0.96
+val_ratio: 0.02
+test_ratio: 0.02

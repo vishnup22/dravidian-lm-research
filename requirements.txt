@@ -1,0 +1,7 @@
+accelerate
+datasets
+sentencepiece
+torch
+transformers
+tqdm
+PyYAML
