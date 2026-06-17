@@ -17,6 +17,7 @@ import os
 from dataclasses import asdict, dataclass
 
 import numpy as np
+import pandas as pd
 import torch
 from datasets import Dataset, DatasetDict, load_dataset
 from transformers import (
@@ -114,13 +115,56 @@ def _tok_for_model(model_name: str, our_tokenizer: PreTrainedTokenizer) -> PreTr
 # IndicSentiment (binary sentiment)
 # ---------------------------------------------------------------------------
 
+def _load_indicsentiment_te() -> DatasetDict:
+    """Load IndicSentiment Telugu, falling back to raw file download if the loading script is blocked."""
+    try:
+        return load_dataset("ai4bharat/IndicSentiment", "te")
+    except Exception:
+        pass
+
+    from huggingface_hub import HfApi, hf_hub_download
+
+    api = HfApi()
+    try:
+        all_files = sorted(api.list_repo_files("ai4bharat/IndicSentiment", repo_type="dataset"))
+    except Exception as exc:
+        raise RuntimeError(f"ai4bharat/IndicSentiment inaccessible: {exc}") from exc
+
+    def _find(split_names: list[str]) -> str | None:
+        for f in all_files:
+            fl = f.lower()
+            if any(s in fl for s in split_names) and ("te/" in fl or "/te." in fl or "_te." in fl):
+                return f
+        return None
+
+    split_map = {
+        "train": _find(["train"]),
+        "validation": _find(["val", "dev", "valid"]),
+        "test": _find(["test"]),
+    }
+    missing = [k for k, v in split_map.items() if v is None]
+    if missing:
+        raise RuntimeError(
+            f"Could not find Telugu {missing} split(s) in ai4bharat/IndicSentiment. "
+            f"Repo files: {all_files[:30]}"
+        )
+
+    splits: dict[str, Dataset] = {}
+    for split_name, repo_path in split_map.items():
+        local = hf_hub_download("ai4bharat/IndicSentiment", repo_path, repo_type="dataset")
+        sep = "\t" if local.endswith(".tsv") else ","
+        splits[split_name] = Dataset.from_pandas(pd.read_csv(local, sep=sep), preserve_index=False)
+
+    return DatasetDict(splits)
+
+
 def run_indicsentiment(
     model_name: str,
     tokenizer: PreTrainedTokenizer,
     output_dir: str,
 ) -> DownstreamResult:
     print(f"  [indicsentiment] loading ai4bharat/IndicSentiment (te) for {model_name} ...")
-    ds: DatasetDict = load_dataset("ai4bharat/IndicSentiment", "te", trust_remote_code=True)
+    ds: DatasetDict = _load_indicsentiment_te()
 
     text_col = "INDIC REVIEW"
     label_col = "LABEL"
@@ -214,8 +258,8 @@ def run_wikiann_ner(
     tokenizer: PreTrainedTokenizer,
     output_dir: str,
 ) -> DownstreamResult:
-    print(f"  [wikiann_ner] loading wikiann (te) for {model_name} ...")
-    ds: DatasetDict = load_dataset("wikiann", "te")
+    print(f"  [wikiann_ner] loading unimelb-nlp/wikiann (te) for {model_name} ...")
+    ds: DatasetDict = load_dataset("unimelb-nlp/wikiann", "te")
 
     label_list: list[str] = ds["train"].features["ner_tags"].feature.names
     id2label = {i: l for i, l in enumerate(label_list)}
@@ -299,60 +343,11 @@ def run_indicxnli(
     Note: cross-lingual transfer from a monolingual Telugu LM to NLI is a
     stringent test; lower scores vs mGPT are expected and informative.
     """
-    print(f"  [indicxnli] loading IndicXNLI (te) for {model_name} ...")
-    try:
-        ds: DatasetDict = load_dataset("ai4bharat/IndicXNLI", "te", trust_remote_code=True)
-    except Exception:
-        print("  [indicxnli] ai4bharat/IndicXNLI not available; falling back to xnli (te)")
-        te_test = load_dataset("xnli", "te", split="test")
-        te_val = load_dataset("xnli", "te", split="validation")
-        en_train = load_dataset("xnli", "en", split="train")
-        ds = DatasetDict({"train": en_train, "validation": te_val, "test": te_test})
-
-    def preprocess(examples: dict) -> dict:
-        enc = tokenizer(
-            examples["premise"],
-            examples["hypothesis"],
-            truncation=True,
-            max_length=DOWNSTREAM_MAX_LEN,
-            padding=False,
-        )
-        enc["labels"] = examples["label"]
-        return enc
-
-    cols = ds["train"].column_names
-    tokenized = ds.map(preprocess, batched=True, remove_columns=cols)
-    tokenized.set_format("torch")
-
-    model = _load_seq_clf_model(model_name, num_labels=3, pad_token_id=tokenizer.pad_token_id)
-    accuracy = hf_evaluate.load("accuracy")
-
-    def compute_metrics(eval_pred):
-        logits, labels = eval_pred
-        preds = np.argmax(logits, axis=-1)
-        return accuracy.compute(predictions=preds, references=labels)
-
-    args = _trainer_args(output_dir, use_bf16=torch.cuda.is_available())
-    trainer = Trainer(
-        model=model,
-        args=args,
-        train_dataset=tokenized["train"],
-        eval_dataset=tokenized["validation"],
-        data_collator=DataCollatorWithPadding(tokenizer=tokenizer),
-        compute_metrics=compute_metrics,
-    )
-    trainer.train()
-    test_metrics = trainer.evaluate(tokenized["test"])
-
-    score = test_metrics.get("eval_accuracy", 0.0)
-    return DownstreamResult(
-        task="indicxnli_te",
-        model_name=model_name,
-        metric_name="accuracy",
-        score=round(score, 4),
-        num_train=len(tokenized["train"]),
-        num_test=len(tokenized["test"]),
-        details=test_metrics,
+    # Telugu is not in XNLI (facebook/xnli covers 15 languages, not Telugu).
+    # ai4bharat/IndicXNLI is also unavailable (deprecated loading script).
+    raise RuntimeError(
+        "Telugu NLI skipped: ai4bharat/IndicXNLI uses a deprecated loading script "
+        "and Telugu is not included in facebook/xnli."
     )
 
 
