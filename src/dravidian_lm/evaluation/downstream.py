@@ -116,44 +116,30 @@ def _tok_for_model(model_name: str, our_tokenizer: PreTrainedTokenizer) -> PreTr
 # ---------------------------------------------------------------------------
 
 def _load_indicsentiment_te() -> DatasetDict:
-    """Load IndicSentiment Telugu, falling back to raw file download if the loading script is blocked."""
-    try:
-        return load_dataset("ai4bharat/IndicSentiment", "te")
-    except Exception:
-        pass
+    """Load IndicSentiment Telugu from raw JSON files (loading script is blocked by HF).
 
-    from huggingface_hub import HfApi, hf_hub_download
-
-    api = HfApi()
-    try:
-        all_files = sorted(api.list_repo_files("ai4bharat/IndicSentiment", repo_type="dataset"))
-    except Exception as exc:
-        raise RuntimeError(f"ai4bharat/IndicSentiment inaccessible: {exc}") from exc
-
-    def _find(split_names: list[str]) -> str | None:
-        for f in all_files:
-            fl = f.lower()
-            if any(s in fl for s in split_names) and ("te/" in fl or "/te." in fl or "_te." in fl):
-                return f
-        return None
-
-    split_map = {
-        "train": _find(["train"]),
-        "validation": _find(["val", "dev", "valid"]),
-        "test": _find(["test"]),
-    }
-    missing = [k for k, v in split_map.items() if v is None]
-    if missing:
-        raise RuntimeError(
-            f"Could not find Telugu {missing} split(s) in ai4bharat/IndicSentiment. "
-            f"Repo files: {all_files[:30]}"
-        )
+    Repo layout: data/{test,validation}/te.json — no train split exists for Telugu.
+    We create a synthetic train split by holding out 80 % of the validation set.
+    """
+    import json
+    from huggingface_hub import hf_hub_download
 
     splits: dict[str, Dataset] = {}
-    for split_name, repo_path in split_map.items():
-        local = hf_hub_download("ai4bharat/IndicSentiment", repo_path, repo_type="dataset")
-        sep = "\t" if local.endswith(".tsv") else ","
-        splits[split_name] = Dataset.from_pandas(pd.read_csv(local, sep=sep), preserve_index=False)
+    for hf_split in ("test", "validation"):
+        repo_path = f"data/{hf_split}/te.json"
+        try:
+            local = hf_hub_download("ai4bharat/IndicSentiment", repo_path, repo_type="dataset")
+        except Exception as exc:
+            raise RuntimeError(f"Cannot download {repo_path} from ai4bharat/IndicSentiment: {exc}") from exc
+        with open(local, encoding="utf-8") as f:
+            records = json.load(f)
+        splits[hf_split] = Dataset.from_list(records)
+
+    # No train split in the repo — carve 80 % of validation for training.
+    val_shuffled = splits["validation"].shuffle(seed=42)
+    n_train = int(0.8 * len(val_shuffled))
+    splits["train"] = val_shuffled.select(range(n_train))
+    splits["validation"] = val_shuffled.select(range(n_train, len(val_shuffled)))
 
     return DatasetDict(splits)
 
@@ -285,7 +271,7 @@ def run_wikiann_ner(
         model_name, config=config, ignore_mismatched_sizes=True
     )
 
-    seqeval = hf_evaluate.load("seqeval")
+    import seqeval.metrics as seqeval_metrics
 
     def compute_metrics(eval_pred):
         logits, labels = eval_pred
@@ -298,11 +284,10 @@ def run_wikiann_ner(
             [id2label[l] for l in label_row if l != -100]
             for label_row in labels
         ]
-        res = seqeval.compute(predictions=true_preds, references=true_labels)
         return {
-            "f1": res["overall_f1"],
-            "precision": res["overall_precision"],
-            "recall": res["overall_recall"],
+            "f1": seqeval_metrics.f1_score(true_labels, true_preds),
+            "precision": seqeval_metrics.precision_score(true_labels, true_preds),
+            "recall": seqeval_metrics.recall_score(true_labels, true_preds),
         }
 
     args = _trainer_args(output_dir, use_bf16=torch.cuda.is_available())
