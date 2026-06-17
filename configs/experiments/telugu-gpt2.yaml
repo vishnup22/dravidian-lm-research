@@ -6,5 +6,4 @@ tokenizer_name: te
 model_config: configs/models/gpt2-small.yaml
 data_config: configs/data/dravidian-mono.yaml
 seeds:
-  - 1
   - 2

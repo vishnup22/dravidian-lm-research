@@ -56,7 +56,7 @@ Planned direction:
 
 ## Current Models
 
-- Telugu: [pulipakav-1/dravidian-gpt2-telugu](https://huggingface.co/pulipakav-1/dravidian-gpt2-telugu)
+- Telugu: [pulipakav-1/dravidian-gpt2-telugu](https://huggingface.co/pulipakav-1/dravidian-gpt2-telugu) using the `seed2` subfolder
 - Kannada: [pulipakav-1/dravidian-gpt2-kannada](https://huggingface.co/pulipakav-1/dravidian-gpt2-kannada)
 - Malayalam: training in progress
 
@@ -64,7 +64,6 @@ Planned direction:
 
 Tracked raw outputs:
 
-- [results/raw/telugu_seed1.json](./results/raw/telugu_seed1.json)
 - [results/raw/telugu_seed2.json](./results/raw/telugu_seed2.json)
 - [results/raw/kannada_seed1.json](./results/raw/kannada_seed1.json)
 
@@ -72,7 +71,6 @@ Sample metrics:
 
 | Language | Run | Eval Loss | Perplexity |
 | --- | --- | ---: | ---: |
-| Telugu | seed1 | 3.7620 | 43.03 |
 | Telugu | seed2 | 3.7635 | 43.10 |
 | Kannada | seed1 | 3.9794 | 53.49 |
 
