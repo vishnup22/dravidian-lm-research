@@ -1,0 +1,11 @@
+clean_data/
+data/
+models/
+tokenizers/
+logs/
+*.bin
+*.safetensors
+*.txt
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
