@@ -2,13 +2,13 @@
 
 Research codebase for pretraining and evaluating language models for Dravidian languages, with an initial focus on monolingual GPT-2 models for Telugu, Kannada, Tamil, and Malayalam.
 
-## GitHub Description
+## About
 
-Research codebase for Dravidian language model pretraining, tokenization, and evaluation across multiple architectures and languages.
+Research repository for Dravidian language model pretraining, tokenization, and benchmarking across architectures.
 
-## Suggested Topics
+## Topics
 
-`dravidian-languages`, `language-modeling`, `pretraining`, `gpt2`, `nlp`, `low-resource-languages`, `tokenization`, `huggingface`, `transformers`, `computational-linguistics`
+`dravidian-languages`, `language-modeling`, `pretraining`, `nlp`, `transformers`, `huggingface`, `gpt2`, `tokenization`, `low-resource-languages`, `computational-linguistics`
 
 ## Scope
 
