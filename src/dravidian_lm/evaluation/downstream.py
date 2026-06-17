@@ -32,8 +32,6 @@ from transformers import (
     TrainingArguments,
 )
 
-import evaluate as hf_evaluate
-
 
 DOWNSTREAM_MAX_LEN = 256
 FINETUNE_EPOCHS = 5
@@ -132,7 +130,7 @@ def _load_indicsentiment_te() -> DatasetDict:
         except Exception as exc:
             raise RuntimeError(f"Cannot download {repo_path} from ai4bharat/IndicSentiment: {exc}") from exc
         with open(local, encoding="utf-8") as f:
-            records = json.load(f)
+            records = [json.loads(line) for line in f if line.strip()]
         splits[hf_split] = Dataset.from_list(records)
 
     # No train split in the repo — carve 80 % of validation for training.
@@ -172,12 +170,10 @@ def run_indicsentiment(
     num_labels = len(set(ds["train"][label_col]))
     model = _load_seq_clf_model(model_name, num_labels, tokenizer.pad_token_id)
 
-    accuracy = hf_evaluate.load("accuracy")
-
     def compute_metrics(eval_pred):
         logits, labels = eval_pred
         preds = np.argmax(logits, axis=-1)
-        return accuracy.compute(predictions=preds, references=labels)
+        return {"accuracy": float((preds == labels).mean())}
 
     val_split = "validation" if "validation" in tokenized else "test"
     args = _trainer_args(output_dir, use_bf16=torch.cuda.is_available())
