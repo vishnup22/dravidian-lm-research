@@ -11,6 +11,19 @@ Uses a plain PyTorch training loop instead of HuggingFace Trainer to avoid
 callback/dependency issues in Colab environments.
 """
 
+# Patch VideoReader BEFORE any transformers import — torchvision >= 0.17 removed it
+# but some transformers internals still do `from torchvision.io import VideoReader`.
+import sys as _sys
+try:
+    import torchvision.io as _tvio
+    if not hasattr(_tvio, "VideoReader"):
+        class _VideoReaderStub:
+            pass
+        _tvio.VideoReader = _VideoReaderStub
+        _sys.modules["torchvision.io"] = _tvio
+except Exception:
+    pass
+
 import gc
 import os
 from dataclasses import asdict, dataclass
@@ -196,8 +209,14 @@ def run_indicsentiment(
     text_col = "INDIC REVIEW"
     label_col = "LABEL"
 
+    _STR_LABEL = {"negative": 0, "neutral": 1, "positive": 2}
+
     def _flat(v):
-        return int(v[0]) if isinstance(v, list) else int(v)
+        if isinstance(v, list):
+            v = v[0]
+        if isinstance(v, str):
+            return _STR_LABEL.get(v.strip().lower(), 0)
+        return int(v)
 
     def preprocess(examples: dict) -> dict:
         enc = tokenizer(
@@ -214,6 +233,7 @@ def run_indicsentiment(
     tokenized.set_format("torch")
 
     flat_train_labels = [_flat(r) for r in ds["train"][label_col]]
+    print(f"    label sample: {ds['train'][label_col][:3]}")
     num_labels = len(set(flat_train_labels))
     print(f"    num_labels={num_labels}  train={len(tokenized['train'])}  test={len(tokenized['test'])}")
 
