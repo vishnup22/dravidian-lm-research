@@ -14,11 +14,23 @@ are directly comparable.
 """
 
 import os
+import sys
 from dataclasses import asdict, dataclass
 
 import numpy as np
 import pandas as pd
 import torch
+
+# torchvision >= 0.17 removed VideoReader; stub it so Trainer callbacks don't crash.
+try:
+    import torchvision.io as _tvio
+    if not hasattr(_tvio, "VideoReader"):
+        class _VideoReaderStub:
+            pass
+        _tvio.VideoReader = _VideoReaderStub
+        sys.modules.setdefault("torchvision.io", _tvio)
+except Exception:
+    pass
 from datasets import Dataset, DatasetDict, load_dataset
 from transformers import (
     AutoTokenizer,
