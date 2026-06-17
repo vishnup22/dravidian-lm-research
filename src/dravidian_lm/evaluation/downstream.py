@@ -209,14 +209,20 @@ def run_indicsentiment(
     text_col = "INDIC REVIEW"
     label_col = "LABEL"
 
-    _STR_LABEL = {"negative": 0, "neutral": 1, "positive": 2}
+    # Build label map from the actual unique values in the data (handles strings like
+    # "Positive"/"Negative" as well as plain integers).
+    def _raw(v):
+        v = v[0] if isinstance(v, list) else v
+        return v.strip().lower() if isinstance(v, str) else str(int(v))
+
+    all_raw = [_raw(r) for r in ds["train"][label_col]]
+    unique_raw = sorted(set(all_raw))
+    str_to_id = {s: i for i, s in enumerate(unique_raw)}
+    num_labels = len(unique_raw)
+    print(f"    labels: {str_to_id}  train={len(ds['train'])}  test={len(ds['test'])}")
 
     def _flat(v):
-        if isinstance(v, list):
-            v = v[0]
-        if isinstance(v, str):
-            return _STR_LABEL.get(v.strip().lower(), 0)
-        return int(v)
+        return str_to_id[_raw(v)]
 
     def preprocess(examples: dict) -> dict:
         enc = tokenizer(
@@ -231,10 +237,6 @@ def run_indicsentiment(
     cols = ds["train"].column_names
     tokenized = ds.map(preprocess, batched=True, remove_columns=cols)
     tokenized.set_format("torch")
-
-    flat_train_labels = [_flat(r) for r in ds["train"][label_col]]
-    print(f"    label sample: {ds['train'][label_col][:3]}")
-    num_labels = len(set(flat_train_labels))
     print(f"    num_labels={num_labels}  train={len(tokenized['train'])}  test={len(tokenized['test'])}")
 
     model = _load_seq_clf_model(model_name, num_labels, tokenizer.pad_token_id)
