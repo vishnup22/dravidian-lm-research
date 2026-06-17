@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "dravidian-lm"
+version = "0.1.0"
+requires-python = ">=3.9"
+dependencies = [
+    "accelerate",
+    "datasets",
+    "evaluate",
+    "numpy",
+    "seqeval",
+    "sentencepiece",
+    "torch",
+    "transformers",
+    "tqdm",
+    "PyYAML",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
