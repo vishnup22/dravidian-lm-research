@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import lzma
+import urllib.request
 
 from datasets import load_dataset
 from tqdm import tqdm
@@ -12,11 +14,13 @@ from dravidian_lm.paths import RAW_DATA_DIR
 
 LANGUAGES = ["te", "ta", "kn", "ml"]
 
-CC100_LANG = {
-    "te": "te",
-    "ta": "ta",
-    "kn": "kn",
-    "ml": "ml",
+# CC100 is no longer available via the HuggingFace dataset hub (loading scripts
+# were deprecated). Download the original xz files from statmt.org instead.
+CC100_URLS = {
+    "te": "http://data.statmt.org/cc-100/te.txt.xz",
+    "ta": "http://data.statmt.org/cc-100/ta.txt.xz",
+    "kn": "http://data.statmt.org/cc-100/kn.txt.xz",
+    "ml": "http://data.statmt.org/cc-100/ml.txt.xz",
 }
 
 WIKI_LANG = {
@@ -43,20 +47,33 @@ TINYSTORIES_SPLITS = {
 RAW_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 
+class _DownloadProgress(tqdm):
+    def update_to(self, b: int = 1, bsize: int = 1, tsize: int | None = None) -> None:
+        if tsize is not None:
+            self.total = tsize
+        self.update(b * bsize - self.n)
+
+
 def download_cc100(lang: str) -> None:
     out = RAW_DATA_DIR / f"{lang}_cc100.txt"
     if out.exists():
         print(f"  [{lang}] cc100 already exists, skipping")
         return
-    print(f"  [{lang}] Downloading CC100...")
-    ds = load_dataset("cc100", CC100_LANG[lang], split="train", streaming=True, trust_remote_code=True)
+    url = CC100_URLS[lang]
+    xz_path = RAW_DATA_DIR / f"{lang}_cc100.txt.xz"
+    print(f"  [{lang}] Downloading CC100 from {url} ...")
+    with _DownloadProgress(unit="B", unit_scale=True, miniters=1, desc=f"{lang}/cc100.xz") as pbar:
+        urllib.request.urlretrieve(url, xz_path, reporthook=pbar.update_to)
+    print(f"  [{lang}] Extracting...")
     written = 0
-    with out.open("w", encoding="utf-8") as f:
-        for row in tqdm(ds, desc=f"{lang}/cc100", unit="lines"):
-            text = row.get("text", "").strip()
-            if text:
-                f.write(text + "\n")
-                written += 1
+    with lzma.open(xz_path, "rt", encoding="utf-8") as fin:
+        with out.open("w", encoding="utf-8") as fout:
+            for line in tqdm(fin, desc=f"{lang}/cc100", unit="lines"):
+                text = line.strip()
+                if text:
+                    fout.write(text + "\n")
+                    written += 1
+    xz_path.unlink()
     print(f"  [{lang}] cc100 done: {written:,} lines -> {out.name}")
 
 
