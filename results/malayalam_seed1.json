@@ -1,0 +1,26 @@
+{
+  "language": "malayalam",
+  "run_name": "seed1",
+  "seed": 1,
+  "num_epochs": 3,
+  "total_steps": 340491,
+  "train_runtime_seconds": 314089.4535636902,
+  "train_loss": 3.875185398425689,
+  "eval_loss": 3.5115268230438232,
+  "perplexity": 33.49937637693352,
+  "train_metrics": {
+    "train_runtime": 314085.8444,
+    "train_samples_per_second": 277.524,
+    "train_steps_per_second": 1.084,
+    "total_flos": 2.421617645875888e+18,
+    "train_loss": 3.875185398425689,
+    "epoch": 2.9999768718136792
+  },
+  "eval_metrics": {
+    "eval_loss": 3.5115268230438232,
+    "eval_runtime": 531.9637,
+    "eval_samples_per_second": 1137.899,
+    "eval_steps_per_second": 71.12,
+    "epoch": 2.9999768718136792
+  }
+}

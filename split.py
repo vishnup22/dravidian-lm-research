@@ -1,4 +1,3 @@
-
 import argparse
 from pathlib import Path
 
@@ -58,7 +57,6 @@ def main() -> None:
 
     print("=" * 62)
     print("  TRAIN / VAL / TEST SPLIT  (96 / 2 / 2)")
-    print("=" * 62 + "\n")
 
     for lang in langs:
         split_language(lang)
