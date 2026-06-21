@@ -106,14 +106,27 @@ def extract_texts(rows) -> list[str]:
 
 
 def load_hf_split(language: str, split: str) -> list[str]:
-    rows = load_dataset(HF_DATASET_REPO, LANGUAGE_NAMES[language], split=split)
-    texts = extract_texts(rows)
-    if not texts:
-        raise ValueError(
-            f"No usable text rows found in dataset={HF_DATASET_REPO}, "
-            f"config={LANGUAGE_NAMES[language]}, split={split}"
-        )
-    return texts
+    language_name = LANGUAGE_NAMES[language]
+    attempts = [
+        {"data_dir": language_name, "split": split},
+        {"name": language_name, "split": split},
+    ]
+    errors: list[str] = []
+
+    for kwargs in attempts:
+        try:
+            rows = load_dataset(HF_DATASET_REPO, **kwargs)
+            texts = extract_texts(rows)
+            if texts:
+                return texts
+            errors.append(f"{kwargs} -> no usable text rows")
+        except Exception as exc:
+            errors.append(f"{kwargs} -> {exc}")
+
+    raise ValueError(
+        f"Unable to load dataset={HF_DATASET_REPO} for language={language_name}, "
+        f"split={split}. Attempts: {'; '.join(errors)}"
+    )
 
 
 def wait_for_cache_ready(cache_path: Path, ready_path: Path, timeout_s: int = 7200) -> None:

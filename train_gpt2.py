@@ -163,14 +163,26 @@ def extract_texts(rows) -> list[str]:
 
 def load_hf_split(language: str, split: str) -> list[str]:
     language_name, _ = normalize_language(language)
-    rows = load_dataset(HF_DATASET_REPO, language_name, split=split)
-    texts = extract_texts(rows)
-    if not texts:
-        raise ValueError(
-            f"No usable text rows found in dataset={HF_DATASET_REPO}, "
-            f"config={language_name}, split={split}"
-        )
-    return texts
+    attempts = [
+        {"data_dir": language_name, "split": split},
+        {"name": language_name, "split": split},
+    ]
+    errors: list[str] = []
+
+    for kwargs in attempts:
+        try:
+            rows = load_dataset(HF_DATASET_REPO, **kwargs)
+            texts = extract_texts(rows)
+            if texts:
+                return texts
+            errors.append(f"{kwargs} -> no usable text rows")
+        except Exception as exc:
+            errors.append(f"{kwargs} -> {exc}")
+
+    raise ValueError(
+        f"Unable to load dataset={HF_DATASET_REPO} for language={language_name}, "
+        f"split={split}. Attempts: {'; '.join(errors)}"
+    )
 
 
 def resolve_split_source(language: str, split: str) -> Path:
