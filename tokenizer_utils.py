@@ -1,19 +1,25 @@
 import argparse
+import os
 import random
-import sentencepiece as spm
 from pathlib import Path
 
-BASE      = Path("/nfs/storage1/home/pulipakv/Dravidian")
-PROC_DIR  = BASE / "data" / "processed"
-TOK_DIR   = BASE / "tokenizers"
+import sentencepiece as spm
+from datasets import load_dataset
 
-LANGUAGES        = ["te", "ta", "kn", "ml"]
-MONO_VOCAB_SIZE  = 32_000   # per language — 32K is sufficient for monolingual
-JOINT_VOCAB_SIZE = 64_000   # 4 languages share vocab — 64K gives ~16K tokens/lang
-NORM_RULE        = "nmt_nfkc"
+BASE = Path("/nfs/storage1/home/pulipakv/Dravidian")
+PROC_DIR = BASE / "data" / "processed"
+TOK_DIR = BASE / "tokenizers"
+HF_DATASET_REPO = os.environ.get("DRAVIDIAN_DATASET", "pulipakav-1/dravidian")
 
-# 100M words per language → 400M total for joint tokenizer (equal contribution)
+LANGUAGES = ["te", "ta", "kn", "ml"]
+LANGUAGE_NAMES = {"te": "telugu", "ta": "tamil", "kn": "kannada", "ml": "malayalam"}
+MONO_VOCAB_SIZE = 32_000
+JOINT_VOCAB_SIZE = 64_000
+NORM_RULE = "nmt_nfkc"
+
+# 100M words per language -> 400M total for joint tokenizer.
 JOINT_SAMPLE_WORDS = 100_000_000
+
 
 def _spm_train(input_path: str, prefix: str, vocab_size: int = MONO_VOCAB_SIZE) -> None:
     spm.SentencePieceTrainer.train(
@@ -37,75 +43,145 @@ def _spm_train(input_path: str, prefix: str, vocab_size: int = MONO_VOCAB_SIZE) 
         eos_piece="</s>",
     )
 
-def train_mono(lang: str) -> None:
+
+def load_local_lines(lang: str) -> list[str]:
     in_path = PROC_DIR / f"{lang}_train.txt"
+    if not in_path.exists():
+        raise FileNotFoundError(in_path)
+    return [line.strip() for line in in_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def extract_texts(rows) -> list[str]:
+    texts: list[str] = []
+    for row in rows:
+        text = (
+            row.get("text")
+            or row.get("content")
+            or row.get("sentence")
+            or row.get("story")
+            or ""
+        )
+        text = text.strip()
+        if text:
+            texts.append(text)
+    return texts
+
+
+def load_hf_lines(lang: str) -> list[str]:
+    rows = load_dataset(HF_DATASET_REPO, LANGUAGE_NAMES[lang], split="train")
+    texts = extract_texts(rows)
+    if not texts:
+        raise ValueError(
+            f"No usable text rows found in dataset={HF_DATASET_REPO}, "
+            f"config={LANGUAGE_NAMES[lang]}, split=train"
+        )
+    return texts
+
+
+def load_train_lines(lang: str) -> list[str]:
+    try:
+        return load_hf_lines(lang)
+    except Exception as dataset_exc:
+        print(f"  [{lang}] falling back to local processed train file: {dataset_exc}")
+        return load_local_lines(lang)
+
+
+def write_training_text(lines: list[str], out_path: Path) -> None:
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def train_mono(lang: str) -> None:
     out_dir = TOK_DIR / lang
     out_dir.mkdir(parents=True, exist_ok=True)
-    prefix  = str(out_dir / "tokenizer")
-    
+    prefix = str(out_dir / "tokenizer")
+    temp_input = out_dir / f"{lang}_train_for_tokenizer.txt"
+
     if (out_dir / "tokenizer.model").exists():
-        print(f"  [{lang}] tokenizer already exists — skipping")
+        print(f"  [{lang}] tokenizer already exists - skipping")
         return
-    if not in_path.exists():
-        print(f"  [{lang}] {in_path.name} not found — skipping")
+
+    try:
+        lines = load_train_lines(lang)
+    except Exception as exc:
+        print(f"  [{lang}] failed to load training text - skipping: {exc}")
         return
 
     print(f"  [{lang}] Training monolingual tokenizer")
-    _spm_train(str(in_path), prefix)
-    print(f"  [{lang}] Done → {out_dir}/tokenizer.model")
+    write_training_text(lines, temp_input)
+    try:
+        _spm_train(str(temp_input), prefix)
+    finally:
+        if temp_input.exists():
+            temp_input.unlink()
+    print(f"  [{lang}] Done -> {out_dir}/tokenizer.model")
+
+
+def sample_joint_lines(lang: str, max_words: int) -> tuple[list[str], int]:
+    lines = load_train_lines(lang)
+    words = 0
+    sampled: list[str] = []
+    for line in lines:
+        sampled.append(line)
+        words += len(line.split())
+        if words >= max_words:
+            break
+    random.shuffle(sampled)
+    return sampled, words
 
 
 def train_joint() -> None:
-    out_dir     = TOK_DIR / "joint"
+    out_dir = TOK_DIR / "joint"
     out_dir.mkdir(parents=True, exist_ok=True)
-    prefix      = str(out_dir / "tokenizer")
+    prefix = str(out_dir / "tokenizer")
     joint_input = out_dir / "joint_input.txt"
 
     if (out_dir / "tokenizer.model").exists():
-        print("  [joint] tokenizer already exists — skipping")
+        print("  [joint] tokenizer already exists - skipping")
         return
 
-    # Equal word count per language
     print(f"  [joint] Sampling {JOINT_SAMPLE_WORDS:,} words per language...")
+    wrote_any = False
     with open(joint_input, "w", encoding="utf-8") as fout:
         for lang in LANGUAGES:
-            in_path = PROC_DIR / f"{lang}_train.txt"
-            if not in_path.exists():
-                print(f"  [joint] {in_path.name} not found — skipping {lang}")
+            try:
+                lines, words = sample_joint_lines(lang, JOINT_SAMPLE_WORDS)
+            except Exception as exc:
+                print(f"  [joint] failed to load {lang} - skipping: {exc}")
                 continue
-            words, lines = 0, []
-            with open(in_path, encoding="utf-8", errors="ignore") as fin:
-                for line in fin:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    lines.append(line)
-                    words += len(line.split())
-                    if words >= JOINT_SAMPLE_WORDS:
-                        break
 
-            random.shuffle(lines)
             for line in lines:
                 fout.write(line + "\n")
+            wrote_any = True
             print(f"  [joint]   {lang}: {words:,} words / {len(lines):,} lines")
 
+    if not wrote_any:
+        if joint_input.exists():
+            joint_input.unlink()
+        raise RuntimeError("No training text was available for the joint tokenizer.")
+
     print("  [joint] Training joint tokenizer...")
-    _spm_train(str(joint_input), prefix, vocab_size=JOINT_VOCAB_SIZE)
-    joint_input.unlink()
-    print(f"  [joint] Done → {out_dir}/")
+    try:
+        _spm_train(str(joint_input), prefix, vocab_size=JOINT_VOCAB_SIZE)
+    finally:
+        if joint_input.exists():
+            joint_input.unlink()
+    print(f"  [joint] Done -> {out_dir}/")
+
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--lang",       choices=LANGUAGES, default=None)
+    parser.add_argument("--lang", choices=LANGUAGES, default=None)
     parser.add_argument("--joint-only", action="store_true")
     args = parser.parse_args()
 
     print("Training tokenizers")
+    print(f"  Dataset       : {HF_DATASET_REPO}")
     print(f"  Vocab size    : {MONO_VOCAB_SIZE:,} (mono) / {JOINT_VOCAB_SIZE:,} (joint)")
-    print(f"  Coverage      : 1.0")
+    print("  Coverage      : 1.0")
     print(f"  Normalization : {NORM_RULE}")
-    print(f"  Type          : BPE + byte fallback")
-    print(f"  Large corpus  : True\n")
+    print("  Type          : BPE + byte fallback")
+    print("  Large corpus  : True\n")
 
     if not args.joint_only:
         langs = [args.lang] if args.lang else LANGUAGES
@@ -117,6 +193,6 @@ def main() -> None:
 
     print("\nAll tokenizers trained.")
 
+
 if __name__ == "__main__":
     main()
-
