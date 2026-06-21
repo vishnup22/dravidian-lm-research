@@ -8,7 +8,7 @@ import random
 import time
 from pathlib import Path
 
-from datasets import Dataset, load_from_disk
+from datasets import Dataset, load_dataset, load_from_disk
 from transformers import (
     DataCollatorForLanguageModeling,
     GPT2Config,
@@ -24,6 +24,7 @@ os.environ["TRANSFORMERS_NO_FLASH_ATTN"] = "1"
 ROOT = Path.cwd()
 ENV_BASE = os.environ.get("DRAVIDIAN_BASE")
 DEFAULT_CLUSTER_BASE = Path("/nfs/storage1/home/pulipakv/Dravidian")
+HF_DATASET_REPO = os.environ.get("DRAVIDIAN_DATASET", "pulipakav-1/dravidian")
 
 START_SEED = 1
 NUM_SEEDS = 2
@@ -144,6 +145,34 @@ def load_lines(path: Path) -> list[str]:
     return [ln.strip() for ln in lines if ln.strip()]
 
 
+def extract_texts(rows) -> list[str]:
+    texts: list[str] = []
+    for row in rows:
+        text = (
+            row.get("text")
+            or row.get("content")
+            or row.get("sentence")
+            or row.get("story")
+            or ""
+        )
+        text = text.strip()
+        if text:
+            texts.append(text)
+    return texts
+
+
+def load_hf_split(language: str, split: str) -> list[str]:
+    language_name, _ = normalize_language(language)
+    rows = load_dataset(HF_DATASET_REPO, language_name, split=split)
+    texts = extract_texts(rows)
+    if not texts:
+        raise ValueError(
+            f"No usable text rows found in dataset={HF_DATASET_REPO}, "
+            f"config={language_name}, split={split}"
+        )
+    return texts
+
+
 def resolve_split_source(language: str, split: str) -> Path:
     language_name, language_code = normalize_language(language)
     split_candidates = {"train": [], "val": [], "test": []}
@@ -222,11 +251,18 @@ def build_or_load_tokenized_dataset(language: str, split: str, tokenizer: T5Toke
         wait_for_cache_ready(cache_path, ready_path)
         return load_from_disk(str(cache_path))
 
-    src = resolve_split_source(language, split)
     error_path = cache_path.parent / f"{cache_name}.error"
 
     try:
-        texts = load_lines(src)
+        try:
+            texts = load_hf_split(language, split)
+        except Exception as dataset_exc:
+            src = resolve_split_source(language, split)
+            print(
+                f"[{time.strftime('%H:%M:%S')}] falling back to local {split} data for {language}: {dataset_exc}",
+                flush=True,
+            )
+            texts = load_lines(src)
         rng = random.Random(1)
         rng.shuffle(texts)
 

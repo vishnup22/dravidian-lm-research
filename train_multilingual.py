@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 import argparse
 import json
 import math
@@ -9,8 +8,7 @@ import random
 import time
 from pathlib import Path
 
-
-from datasets import Dataset, concatenate_datasets, load_from_disk
+from datasets import Dataset, concatenate_datasets, load_dataset, load_from_disk
 from transformers import (
     DataCollatorForLanguageModeling,
     GPT2Config,
@@ -21,16 +19,13 @@ from transformers import (
     set_seed,
 )
 
-
 os.environ["TRANSFORMERS_NO_FLASH_ATTN"] = "1"
 
-
 ROOT = Path.cwd()
-
+HF_DATASET_REPO = os.environ.get("DRAVIDIAN_DATASET", "pulipakav-1/dravidian")
 
 START_SEED = 1
 NUM_SEEDS = 1
-
 
 MAX_LENGTH = 1024
 PER_DEVICE_BATCH = 4
@@ -42,10 +37,8 @@ WARMUP_STEPS = 4000
 MAX_GRAD_NORM = 0.5
 NUM_WORKERS = 2
 
-
 ALL_LANGUAGES = ["te", "ta", "kn", "ml"]
-
-
+LANGUAGE_NAMES = {"te": "telugu", "ta": "tamil", "kn": "kannada", "ml": "malayalam"}
 
 
 def parse_args() -> argparse.Namespace:
@@ -61,8 +54,6 @@ def parse_args() -> argparse.Namespace:
         help="Tokenizer directory name under tokenizers/ (default: joint).",
     )
     return parser.parse_args()
-
-
 
 
 def build_model(vocab_size: int) -> GPT2LMHeadModel:
@@ -83,8 +74,6 @@ def build_model(vocab_size: int) -> GPT2LMHeadModel:
     return GPT2LMHeadModel(config)
 
 
-
-
 def load_tokenizer(tokenizer_dirname: str) -> T5Tokenizer:
     model_file = ROOT / "tokenizers" / tokenizer_dirname / "tokenizer.model"
     if not model_file.exists():
@@ -95,13 +84,36 @@ def load_tokenizer(tokenizer_dirname: str) -> T5Tokenizer:
     return tok
 
 
-
-
 def load_lines(path: Path) -> list[str]:
     lines = path.read_text(encoding="utf-8").splitlines()
     return [ln.strip() for ln in lines if ln.strip()]
 
 
+def extract_texts(rows) -> list[str]:
+    texts: list[str] = []
+    for row in rows:
+        text = (
+            row.get("text")
+            or row.get("content")
+            or row.get("sentence")
+            or row.get("story")
+            or ""
+        )
+        text = text.strip()
+        if text:
+            texts.append(text)
+    return texts
+
+
+def load_hf_split(language: str, split: str) -> list[str]:
+    rows = load_dataset(HF_DATASET_REPO, LANGUAGE_NAMES[language], split=split)
+    texts = extract_texts(rows)
+    if not texts:
+        raise ValueError(
+            f"No usable text rows found in dataset={HF_DATASET_REPO}, "
+            f"config={LANGUAGE_NAMES[language]}, split={split}"
+        )
+    return texts
 
 
 def wait_for_cache_ready(cache_path: Path, ready_path: Path, timeout_s: int = 7200) -> None:
@@ -120,6 +132,13 @@ def wait_for_cache_ready(cache_path: Path, ready_path: Path, timeout_s: int = 72
         time.sleep(2)
 
 
+def local_fallback_path(language: str, split: str) -> Path:
+    lang_full = LANGUAGE_NAMES[language]
+    if split == "train":
+        return ROOT / "clean_data" / lang_full / "train" / f"{lang_full}_train_balanced.txt"
+    if split == "val":
+        return ROOT / "clean_data" / lang_full / "val" / f"{lang_full}_val_cleaned_final.txt"
+    raise ValueError(f"Unsupported split: {split}")
 
 
 def build_or_load_language_dataset(
@@ -129,43 +148,36 @@ def build_or_load_language_dataset(
     cache_path = ROOT / "data" / cache_name
     ready_path = ROOT / "data" / f"{cache_name}.ready"
 
-
     if cache_path.exists() and ready_path.exists():
         return load_from_disk(str(cache_path))
 
-
     world_size = int(os.environ.get("WORLD_SIZE", "1"))
     rank = int(os.environ.get("RANK", "0"))
-
 
     if world_size > 1 and rank != 0:
         print(f"[{time.strftime('%H:%M:%S')}] rank={rank} waiting for rank0 to build {cache_name}", flush=True)
         wait_for_cache_ready(cache_path, ready_path)
         return load_from_disk(str(cache_path))
 
-
-    lang_map = {"te": "telugu", "ta": "tamil", "kn": "kannada", "ml": "malayalam"}
-    lang_full = lang_map[language]
-
-
-    if split == "train":
-        src = ROOT / "clean_data" / lang_full / "train" / f"{lang_full}_train_balanced.txt"
-    elif split == "val":
-        src = ROOT / "clean_data" / lang_full / "val" / f"{lang_full}_val_cleaned_final.txt"
-    else:
-        raise ValueError(f"Unsupported split: {split}")
-
-
-    if not src.exists():
-        raise FileNotFoundError(f"Missing cleaned {split} file for {language}: {src}")
-
-
     error_path = cache_path.parent / f"{cache_name}.error"
     try:
-        texts = load_lines(src)
+        try:
+            texts = load_hf_split(language, split)
+        except Exception as dataset_exc:
+            src = local_fallback_path(language, split)
+            if not src.exists():
+                raise FileNotFoundError(
+                    f"HF dataset load failed ({dataset_exc}) and local fallback is missing: {src}"
+                ) from dataset_exc
+
+            print(
+                f"[{time.strftime('%H:%M:%S')}] falling back to local {split} data for {language}: {dataset_exc}",
+                flush=True,
+            )
+            texts = load_lines(src)
+
         rng = random.Random(1)
         rng.shuffle(texts)
-
 
         enc = tokenizer(
             texts,
@@ -187,8 +199,6 @@ def build_or_load_language_dataset(
         raise
 
 
-
-
 def build_multilingual_dataset(
     languages: list[str], split: str, tokenizer: T5Tokenizer, seed: int
 ) -> Dataset:
@@ -202,12 +212,9 @@ def build_multilingual_dataset(
         if rank == 0:
             print(f"[{time.strftime('%H:%M:%S')}]   {lang}: {len(ds):,} examples", flush=True)
 
-
     combined = concatenate_datasets(datasets)
     combined = combined.shuffle(seed=seed)
     return combined
-
-
 
 
 def compute_total_steps(
@@ -215,8 +222,6 @@ def compute_total_steps(
 ) -> int:
     steps_per_epoch = max(1, dataset_size // (batch_size * grad_accum * max(1, num_gpus)))
     return steps_per_epoch * num_epochs
-
-
 
 
 def train_one(languages: list[str], seed: int, tokenizer_dirname: str) -> None:
@@ -227,33 +232,22 @@ def train_one(languages: list[str], seed: int, tokenizer_dirname: str) -> None:
     results_dir.mkdir(parents=True, exist_ok=True)
     log_path = results_dir / f"{lang_tag}_{run_name}.json"
 
-
     rank = int(os.environ.get("RANK", "0"))
-
 
     if output_dir.exists() and log_path.exists():
         if rank == 0:
-            print(f"[{time.strftime('%H:%M:%S')}] skipping {lang_tag}/{run_name} — already done", flush=True)
+            print(f"[{time.strftime('%H:%M:%S')}] skipping {lang_tag}/{run_name} - already done", flush=True)
         return
 
-
     if rank == 0:
-        print(f"[{time.strftime('%H:%M:%S')}] starting {lang_tag}/{run_name} — languages: {languages}", flush=True)
+        print(f"[{time.strftime('%H:%M:%S')}] starting {lang_tag}/{run_name} - languages: {languages}", flush=True)
     set_seed(seed)
 
-
     tokenizer = load_tokenizer(tokenizer_dirname)
-
-
     train_dataset = build_multilingual_dataset(languages, "train", tokenizer, seed)
     val_dataset = build_multilingual_dataset(languages, "val", tokenizer, seed)
-
-
     model = build_model(vocab_size=len(tokenizer))
-
-
     data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
-
 
     world_size = int(os.environ.get("WORLD_SIZE", "1"))
     total_steps = compute_total_steps(
@@ -269,7 +263,6 @@ def train_one(languages: list[str], seed: int, tokenizer_dirname: str) -> None:
             f"dataset={len(train_dataset):,}, estimated_total_steps={total_steps:,}",
             flush=True,
         )
-
 
     training_args = TrainingArguments(
         output_dir=str(output_dir),
@@ -298,7 +291,6 @@ def train_one(languages: list[str], seed: int, tokenizer_dirname: str) -> None:
         report_to="none",
     )
 
-
     trainer = Trainer(
         model=model,
         args=training_args,
@@ -307,17 +299,14 @@ def train_one(languages: list[str], seed: int, tokenizer_dirname: str) -> None:
         data_collator=data_collator,
     )
 
-
     start = time.time()
     train_result = trainer.train()
     elapsed = time.time() - start
     eval_result = trainer.evaluate()
     trainer.save_model(str(output_dir))
 
-
     eval_loss = eval_result.get("eval_loss")
     perplexity = math.exp(eval_loss) if eval_loss is not None else None
-
 
     if rank == 0:
         log = {
@@ -337,41 +326,29 @@ def train_one(languages: list[str], seed: int, tokenizer_dirname: str) -> None:
         with open(log_path, "w", encoding="utf-8") as f:
             json.dump(log, f, indent=2, ensure_ascii=False)
 
-
         print(
-            f"[{time.strftime('%H:%M:%S')}] done {lang_tag}/{run_name} — "
+            f"[{time.strftime('%H:%M:%S')}] done {lang_tag}/{run_name} - "
             f"eval_loss={eval_loss:.4f}, perplexity={perplexity:.2f}",
             flush=True,
         )
-
-
 
 
 def main() -> None:
     args = parse_args()
     languages = [lang.strip() for lang in args.languages.split(",") if lang.strip()]
 
-
     rank = int(os.environ.get("RANK", "0"))
     if rank == 0:
         print(f"=== MULTILINGUAL ({', '.join(languages)}) ===", flush=True)
-
 
     for seed in range(START_SEED, START_SEED + NUM_SEEDS):
         if rank == 0:
             print(f"=== seed={seed} ===", flush=True)
         train_one(languages, seed, args.tokenizer_dirname)
 
-
     if rank == 0:
         print("=== MULTILINGUAL DONE ===", flush=True)
 
 
-
-
 if __name__ == "__main__":
     main()
-
-
-
-
