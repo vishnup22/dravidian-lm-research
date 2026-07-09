@@ -13,7 +13,7 @@ from transformers import (
     DataCollatorForLanguageModeling,
     GPT2Config,
     GPT2LMHeadModel,
-    T5Tokenizer,
+    T5TokenizerFast,
     Trainer,
     TrainingArguments,
     set_seed,
@@ -105,11 +105,11 @@ def normalize_language(language: str) -> tuple[str, str]:
     return full_name, code
 
 
-def load_tokenizer(tokenizer_name: str) -> T5Tokenizer:
+def load_tokenizer(tokenizer_name: str) -> T5TokenizerFast:
     model_file = TOKENIZERS_DIR / tokenizer_name / "tokenizer.model"
     if not model_file.exists():
         raise FileNotFoundError(f"Tokenizer model not found: {model_file}")
-    tok = T5Tokenizer(vocab_file=str(model_file), extra_ids=0)
+    tok = T5TokenizerFast(vocab_file=str(model_file), extra_ids=0)
     if tok.pad_token is None:
         tok.add_special_tokens({"pad_token": "<pad>"})
     return tok
@@ -137,7 +137,7 @@ def split_path(language_code: str, split: str) -> Path:
 
 
 def build_or_load_tokenized_dataset(
-    language_code: str, split: str, tokenizer: T5Tokenizer, tokenizer_name: str
+    language_code: str, split: str, tokenizer: T5TokenizerFast, tokenizer_name: str
 ) -> Dataset:
     cache_name = f"{language_code}_{split}_tokenized_ctx{MAX_LENGTH}_{tokenizer_name}"
     cache_path = SPLITS_DIR / "cache" / cache_name
@@ -184,7 +184,7 @@ def build_or_load_tokenized_dataset(
 
 
 def build_or_load_multilingual_dataset(
-    split: str, tokenizer: T5Tokenizer, tokenizer_name: str
+    split: str, tokenizer: T5TokenizerFast, tokenizer_name: str
 ) -> Dataset:
     """Concatenate the per-language tokenized datasets for a joint/multilingual run."""
     cache_name = f"multilingual_{split}_tokenized_ctx{MAX_LENGTH}_{tokenizer_name}"
