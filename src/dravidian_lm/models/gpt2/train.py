@@ -37,6 +37,11 @@ WARMUP_STEPS = 4000
 MAX_GRAD_NORM = 0.5
 NUM_WORKERS = 2
 
+# Parallelize the one-time tokenization/caching pass across CPU cores instead of
+# encoding tens of millions of lines in a single process. Match --cpus-per-task
+# in the SLURM launch scripts.
+TOKENIZE_NUM_PROC = int(os.environ.get("SLURM_CPUS_PER_TASK", "16"))
+
 LANGUAGE_CODES = {
     "telugu": "te",
     "tamil": "ta",
@@ -164,18 +169,22 @@ def build_or_load_tokenized_dataset(
     rng = random.Random(1)
     rng.shuffle(texts)
 
-    enc = tokenizer(
-        texts,
-        truncation=True,
-        padding=False,
-        max_length=MAX_LENGTH,
-        add_special_tokens=False,
-    )
-    ds = Dataset.from_dict(
-        {
-            "input_ids": enc["input_ids"],
-            "attention_mask": enc["attention_mask"],
-        }
+    def _encode(batch: dict) -> dict:
+        return tokenizer(
+            batch["text"],
+            truncation=True,
+            padding=False,
+            max_length=MAX_LENGTH,
+            add_special_tokens=False,
+        )
+
+    raw_ds = Dataset.from_dict({"text": texts})
+    ds = raw_ds.map(
+        _encode,
+        batched=True,
+        num_proc=TOKENIZE_NUM_PROC,
+        remove_columns=["text"],
+        desc=f"tokenizing {language_code}/{split}",
     )
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     ds.save_to_disk(str(cache_path))
