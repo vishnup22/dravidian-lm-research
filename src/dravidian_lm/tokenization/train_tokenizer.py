@@ -14,6 +14,13 @@ JOINT_VOCAB_SIZE = 64_000
 NORM_RULE = "nmt_nfkc"
 JOINT_SAMPLE_WORDS = 100_000_000
 
+# Without a cap, SentencePiece loads the entire input corpus into memory before
+# training. Tamil and Malayalam CC-100 + wiki + samanantar corpora run into the
+# tens of GB, which OOMs. Capping input_sentence_size (paired with
+# shuffle_input_sentence) makes SentencePiece randomly subsample this many
+# sentences instead of reading everything.
+SPM_INPUT_SENTENCE_SIZE = 10_000_000
+
 
 def spm_train(input_path: str, prefix: str, vocab_size: int = MONO_VOCAB_SIZE) -> None:
     spm.SentencePieceTrainer.train(
@@ -26,6 +33,7 @@ def spm_train(input_path: str, prefix: str, vocab_size: int = MONO_VOCAB_SIZE) -
         byte_fallback=True,
         num_threads=8,
         shuffle_input_sentence=True,
+        input_sentence_size=SPM_INPUT_SENTENCE_SIZE,
         train_extremely_large_corpus=True,
         pad_id=0,
         unk_id=1,
