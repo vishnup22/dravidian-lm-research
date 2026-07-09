@@ -8,7 +8,7 @@ import random
 import time
 from pathlib import Path
 
-from datasets import Dataset, load_from_disk
+from datasets import Dataset, concatenate_datasets, load_from_disk
 from transformers import (
     DataCollatorForLanguageModeling,
     GPT2Config,
@@ -48,14 +48,32 @@ LANGUAGE_CODES = {
     "ml": "ml",
 }
 
+ALL_LANGUAGE_CODES = ["te", "ta", "kn", "ml"]
+
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Train a monolingual GPT-2 language model.")
-    parser.add_argument("--language", required=True, help="Language name or code.")
+    parser = argparse.ArgumentParser(description="Train a GPT-2 language model.")
+    parser.add_argument(
+        "--language",
+        required=True,
+        help="Language name or code, or 'multilingual' to train jointly on all four languages.",
+    )
     parser.add_argument(
         "--tokenizer_name",
         required=True,
         help="Tokenizer directory under artifacts/tokenizers/.",
+    )
+    parser.add_argument(
+        "--num_seeds",
+        type=int,
+        default=NUM_SEEDS,
+        help=f"Number of seeds to run (default: {NUM_SEEDS}).",
+    )
+    parser.add_argument(
+        "--start_seed",
+        type=int,
+        default=START_SEED,
+        help=f"First seed to run (default: {START_SEED}).",
     )
     return parser.parse_args()
 
@@ -118,8 +136,10 @@ def split_path(language_code: str, split: str) -> Path:
     return SPLITS_DIR / language_code / f"{language_code}_{split}.txt"
 
 
-def build_or_load_tokenized_dataset(language_code: str, split: str, tokenizer: T5Tokenizer) -> Dataset:
-    cache_name = f"{language_code}_{split}_tokenized_ctx{MAX_LENGTH}_tok32k"
+def build_or_load_tokenized_dataset(
+    language_code: str, split: str, tokenizer: T5Tokenizer, tokenizer_name: str
+) -> Dataset:
+    cache_name = f"{language_code}_{split}_tokenized_ctx{MAX_LENGTH}_{tokenizer_name}"
     cache_path = SPLITS_DIR / "cache" / cache_name
     ready_path = SPLITS_DIR / "cache" / f"{cache_name}.ready"
 
@@ -163,6 +183,38 @@ def build_or_load_tokenized_dataset(language_code: str, split: str, tokenizer: T
     return ds
 
 
+def build_or_load_multilingual_dataset(
+    split: str, tokenizer: T5Tokenizer, tokenizer_name: str
+) -> Dataset:
+    """Concatenate the per-language tokenized datasets for a joint/multilingual run."""
+    cache_name = f"multilingual_{split}_tokenized_ctx{MAX_LENGTH}_{tokenizer_name}"
+    cache_path = SPLITS_DIR / "cache" / cache_name
+    ready_path = SPLITS_DIR / "cache" / f"{cache_name}.ready"
+
+    if cache_path.exists():
+        return load_from_disk(str(cache_path))
+
+    world_size = int(os.environ.get("WORLD_SIZE", "1"))
+    rank = int(os.environ.get("RANK", "0"))
+    if world_size > 1 and rank != 0:
+        print(
+            f"[{time.strftime('%H:%M:%S')}] rank={rank} waiting for rank0 to build {cache_name}",
+            flush=True,
+        )
+        wait_for_cache_ready(cache_path, ready_path)
+        return load_from_disk(str(cache_path))
+
+    parts = [
+        build_or_load_tokenized_dataset(lang_code, split, tokenizer, tokenizer_name)
+        for lang_code in ALL_LANGUAGE_CODES
+    ]
+    ds = concatenate_datasets(parts).shuffle(seed=1)
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    ds.save_to_disk(str(cache_path))
+    ready_path.write_text("ok\n", encoding="utf-8")
+    return ds
+
+
 def compute_total_steps(
     dataset_size: int,
     batch_size: int,
@@ -175,7 +227,10 @@ def compute_total_steps(
 
 
 def train_one(language: str, seed: int, tokenizer_name: str) -> None:
-    language_name, language_code = normalize_language(language)
+    if language.lower() == "multilingual":
+        language_name, language_code = "multilingual", "joint"
+    else:
+        language_name, language_code = normalize_language(language)
     run_name = f"seed{seed}"
     output_dir = MODELS_DIR / "gpt2" / language_name / run_name
     RAW_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -193,8 +248,12 @@ def train_one(language: str, seed: int, tokenizer_name: str) -> None:
     set_seed(seed)
 
     tokenizer = load_tokenizer(tokenizer_name)
-    train_dataset = build_or_load_tokenized_dataset(language_code, "train", tokenizer)
-    val_dataset = build_or_load_tokenized_dataset(language_code, "val", tokenizer)
+    if language_code == "joint":
+        train_dataset = build_or_load_multilingual_dataset("train", tokenizer, tokenizer_name)
+        val_dataset = build_or_load_multilingual_dataset("val", tokenizer, tokenizer_name)
+    else:
+        train_dataset = build_or_load_tokenized_dataset(language_code, "train", tokenizer, tokenizer_name)
+        val_dataset = build_or_load_tokenized_dataset(language_code, "val", tokenizer, tokenizer_name)
     model = build_model(vocab_size=len(tokenizer))
     data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
 
@@ -287,7 +346,7 @@ def train_one(language: str, seed: int, tokenizer_name: str) -> None:
 
 def main() -> None:
     args = parse_args()
-    for seed in range(START_SEED, START_SEED + NUM_SEEDS):
+    for seed in range(args.start_seed, args.start_seed + args.num_seeds):
         print(f"=== {args.language.upper()} seed={seed} ===", flush=True)
         train_one(args.language, seed, args.tokenizer_name)
     print(f"=== {args.language.upper()} DONE ===", flush=True)
