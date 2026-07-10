@@ -288,7 +288,7 @@ def train_one(language: str, seed: int, tokenizer_name: str) -> None:
         per_device_eval_batch_size=PER_DEVICE_BATCH,
         gradient_accumulation_steps=GRAD_ACCUM,
         num_train_epochs=N_EPOCHS,
-        evaluation_strategy="epoch",
+        eval_strategy="epoch",
         logging_steps=200,
         save_strategy="epoch",
         save_total_limit=2,
