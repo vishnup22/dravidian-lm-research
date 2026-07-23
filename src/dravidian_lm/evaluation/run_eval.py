@@ -29,7 +29,7 @@ from datetime import datetime, timezone
 
 import torch
 from huggingface_hub import hf_hub_download
-from transformers import AutoModelForCausalLM, T5Tokenizer, set_seed
+from transformers import AutoModelForCausalLM, T5TokenizerFast, set_seed
 
 from dravidian_lm.paths import RAW_RESULTS_DIR
 from dravidian_lm.evaluation.perplexity import download_split, load_texts, run_perplexity_suite
@@ -116,7 +116,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def load_tokenizer_from_hub(model_name: str) -> T5Tokenizer:
+def load_tokenizer_from_hub(model_name: str) -> T5TokenizerFast:
     """Load the tokenizer directly from the raw SentencePiece binary.
 
     Several of our Hub repos (telugu, kannada, malayalam) carry a stale
@@ -125,9 +125,15 @@ def load_tokenizer_from_hub(model_name: str) -> T5Tokenizer:
     every input to <unk>. Every repo also carries the real tokenizer.model
     SentencePiece binary (the same file train.py's tokenizer was built
     from), so always load from that instead of trusting tokenizer.json.
+
+    Must use T5TokenizerFast, not the slow T5Tokenizer: the slow tokenizer
+    misparses this custom Unigram SentencePiece model (silently collapses
+    to a ~4-token vocab) — see train.py's load_tokenizer() and the "Use
+    T5TokenizerFast instead of slow Python T5Tokenizer" fix in this repo's
+    history.
     """
     vocab_file = hf_hub_download(model_name, "tokenizer.model")
-    tokenizer = T5Tokenizer(vocab_file=vocab_file, extra_ids=0)
+    tokenizer = T5TokenizerFast(vocab_file=vocab_file, extra_ids=0)
     if tokenizer.pad_token is None:
         tokenizer.add_special_tokens({"pad_token": "<pad>"})
     return tokenizer
