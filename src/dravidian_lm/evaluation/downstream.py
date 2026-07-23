@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-"""Downstream fine-tuning evaluation for Telugu GPT-2.
+"""Downstream fine-tuning evaluation for Dravidian GPT-2 models.
 
-Tasks:
-  indicsentiment  — binary sentiment classification (ai4bharat/IndicSentiment, te)
-  wikiann_ner     — named entity recognition (unimelb-nlp/wikiann, te)
-  indicxnli       — skipped (Telugu not in XNLI / loading scripts blocked)
+Tasks (language_code in {te, ta, kn, ml}):
+  indicsentiment  — binary sentiment classification (ai4bharat/IndicSentiment)
+  wikiann_ner     — named entity recognition (unimelb-nlp/wikiann)
+  indicxnli       — skipped (deprecated loading script / inconsistent language coverage)
 
 Uses a plain PyTorch training loop instead of HuggingFace Trainer to avoid
 callback/dependency issues in Colab environments.
@@ -167,10 +167,10 @@ def _load_seq_clf_model(
 # IndicSentiment (binary sentiment)
 # ---------------------------------------------------------------------------
 
-def _load_indicsentiment_te() -> DatasetDict:
-    """Load IndicSentiment Telugu directly from HF Hub file-level download.
+def _load_indicsentiment(language_code: str) -> DatasetDict:
+    """Load IndicSentiment for one language directly from HF Hub file-level download.
 
-    The repo only has data/{test,validation}/te.json (JSONL format).
+    The repo only has data/{test,validation}/{lang}.json (JSONL format).
     We create a synthetic train split from 80 % of validation.
     """
     import json
@@ -178,7 +178,7 @@ def _load_indicsentiment_te() -> DatasetDict:
 
     splits: dict[str, Dataset] = {}
     for hf_split in ("test", "validation"):
-        repo_path = f"data/{hf_split}/te.json"
+        repo_path = f"data/{hf_split}/{language_code}.json"
         try:
             local = hf_hub_download(
                 "ai4bharat/IndicSentiment", repo_path, repo_type="dataset"
@@ -202,9 +202,10 @@ def run_indicsentiment(
     model_name: str,
     tokenizer: PreTrainedTokenizer,
     output_dir: str,
+    language_code: str = "te",
 ) -> DownstreamResult:
-    print(f"  [indicsentiment] loading ai4bharat/IndicSentiment (te) for {model_name} ...")
-    ds: DatasetDict = _load_indicsentiment_te()
+    print(f"  [indicsentiment] loading ai4bharat/IndicSentiment ({language_code}) for {model_name} ...")
+    ds: DatasetDict = _load_indicsentiment(language_code)
 
     text_col = "INDIC REVIEW"
     label_col = "LABEL"
@@ -256,7 +257,7 @@ def run_indicsentiment(
         torch.cuda.empty_cache()
 
     return DownstreamResult(
-        task="indicsentiment_te",
+        task=f"indicsentiment_{language_code}",
         model_name=model_name,
         metric_name="accuracy",
         score=round(score, 4),
@@ -299,9 +300,10 @@ def run_wikiann_ner(
     model_name: str,
     tokenizer: PreTrainedTokenizer,
     output_dir: str,
+    language_code: str = "te",
 ) -> DownstreamResult:
-    print(f"  [wikiann_ner] loading unimelb-nlp/wikiann (te) for {model_name} ...")
-    ds: DatasetDict = load_dataset("unimelb-nlp/wikiann", "te")
+    print(f"  [wikiann_ner] loading unimelb-nlp/wikiann ({language_code}) for {model_name} ...")
+    ds: DatasetDict = load_dataset("unimelb-nlp/wikiann", language_code)
 
     label_list: list[str] = ds["train"].features["ner_tags"].feature.names
     id2label = {i: lbl for i, lbl in enumerate(label_list)}
@@ -360,7 +362,7 @@ def run_wikiann_ner(
         torch.cuda.empty_cache()
 
     return DownstreamResult(
-        task="wikiann_ner_te",
+        task=f"wikiann_ner_{language_code}",
         model_name=model_name,
         metric_name="f1",
         score=round(f1, 4),
@@ -378,10 +380,11 @@ def run_indicxnli(
     model_name: str,
     tokenizer: PreTrainedTokenizer,
     output_dir: str,
+    language_code: str = "te",
 ) -> DownstreamResult:
     raise RuntimeError(
-        "Telugu NLI skipped: ai4bharat/IndicXNLI uses a deprecated loading script "
-        "and Telugu is not included in facebook/xnli."
+        f"{language_code} NLI skipped: ai4bharat/IndicXNLI uses a deprecated loading script "
+        f"and {language_code} is not included in facebook/xnli."
     )
 
 
@@ -403,6 +406,7 @@ def run_downstream_suite(
     tasks: list[str] | None = None,
     run_baselines: bool = False,
     tmp_dir: str = "/tmp/dravidian_downstream",
+    language_code: str = "te",
 ) -> dict:
     if tasks is None:
         tasks = list(TASK_RUNNERS.keys())
@@ -425,7 +429,7 @@ def run_downstream_suite(
             task_dir = os.path.join(tmp_dir, task_name, model.replace("/", "_"))
             os.makedirs(task_dir, exist_ok=True)
             try:
-                result = runner(model, tok, task_dir)
+                result = runner(model, tok, task_dir, language_code=language_code)
                 results[task_name][model] = result.to_dict()
                 print(
                     f"  [downstream] {task_name} | {model}: "

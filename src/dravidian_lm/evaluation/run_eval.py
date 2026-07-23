@@ -26,13 +26,13 @@ import json
 import re
 import time
 from datetime import datetime, timezone
-from pathlib import Path
 
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer, T5Tokenizer, set_seed
+from huggingface_hub import hf_hub_download
+from transformers import AutoModelForCausalLM, T5Tokenizer, set_seed
 
-from dravidian_lm.paths import RAW_RESULTS_DIR, SPLITS_DIR
-from dravidian_lm.evaluation.perplexity import load_texts, run_perplexity_suite
+from dravidian_lm.paths import RAW_RESULTS_DIR
+from dravidian_lm.evaluation.perplexity import download_split, load_texts, run_perplexity_suite
 from dravidian_lm.evaluation.tokenizer_analysis import run_tokenizer_comparison
 from dravidian_lm.evaluation.downstream import run_downstream_suite
 
@@ -116,16 +116,26 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def load_tokenizer_from_hub(model_name: str) -> T5Tokenizer:
+    """Load the tokenizer directly from the raw SentencePiece binary.
+
+    Several of our Hub repos (telugu, kannada, malayalam) carry a stale
+    tokenizer.json with a single-token stub vocab left over from an upload
+    step — loading via AutoTokenizer/PreTrainedTokenizerFast silently maps
+    every input to <unk>. Every repo also carries the real tokenizer.model
+    SentencePiece binary (the same file train.py's tokenizer was built
+    from), so always load from that instead of trusting tokenizer.json.
+    """
+    vocab_file = hf_hub_download(model_name, "tokenizer.model")
+    tokenizer = T5Tokenizer(vocab_file=vocab_file, extra_ids=0)
+    if tokenizer.pad_token is None:
+        tokenizer.add_special_tokens({"pad_token": "<pad>"})
+    return tokenizer
+
+
 def load_model_and_tokenizer(model_name: str, device: str):
     print(f"Loading model: {model_name}")
-    if model_name == MODEL_ID:
-        tokenizer = T5Tokenizer.from_pretrained(model_name, use_fast=False, extra_ids=0)
-        if tokenizer.pad_token is None:
-            tokenizer.add_special_tokens({"pad_token": "<pad>"})
-    else:
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
-        if tokenizer.pad_token is None:
-            tokenizer.pad_token = tokenizer.eos_token
+    tokenizer = load_tokenizer_from_hub(model_name)
 
     dtype = torch.float16 if device.startswith("cuda") else torch.float32
     model = AutoModelForCausalLM.from_pretrained(model_name, dtype=dtype)
@@ -199,7 +209,7 @@ def main() -> None:
         output["perplexity"] = run_perplexity_suite(
             tokenizer=tokenizer,
             model=model,
-            language_code=args.language_code,
+            language=args.language,
             device=device,
             max_eval_lines=args.max_eval_lines,
             batch_size=args.batch_size,
@@ -210,16 +220,8 @@ def main() -> None:
     if "tokenizer" in tasks:
         print("\n=== Tokeniser Analysis ===")
         t0 = time.time()
-        test_path = SPLITS_DIR / args.language_code / f"{args.language_code}_test.txt"
-        if test_path.exists():
-            sample_texts = load_texts(test_path, max_lines=2_000)
-        else:
-            print(f"  [tokenizer] no test split at {test_path}; using hard-coded Telugu sample")
-            sample_texts = [
-                "తెలుగు భాష భారతదేశంలో మాట్లాడే భాషలలో ఒకటి.",
-                "ఆంధ్రప్రదేశ్ మరియు తెలంగాణ రాష్ట్రాలలో తెలుగు అధికార భాష.",
-                "తెలుగు సాహిత్యం చాలా సమృద్ధంగా ఉంది.",
-            ] * 100
+        test_path = download_split(args.language, "test")
+        sample_texts = load_texts(test_path, max_lines=2_000)
         output["tokenizer_analysis"] = run_tokenizer_comparison(
             texts=sample_texts,
             our_tokenizer=tokenizer,
@@ -237,6 +239,7 @@ def main() -> None:
             device=device,
             tasks=args.downstream_tasks,
             run_baselines=args.run_baselines,
+            language_code=args.language_code,
         )
         print(f"  done in {time.time() - t0:.0f}s")
 

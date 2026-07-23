@@ -6,14 +6,28 @@ from pathlib import Path
 from typing import Optional
 
 import torch
+from huggingface_hub import hf_hub_download
 from transformers import GPT2LMHeadModel, PreTrainedTokenizer
-
-from dravidian_lm.paths import SPLITS_DIR
 
 
 MAX_LENGTH = 1024
-# Sources used during training; per-source test files are optional
-SOURCES = ("cc100", "wiki", "samanantar")
+
+# Held-out splits live in the canonical HF Hub dataset, not on local disk —
+# data/splits/{code}/{code}_test.txt was the local split.py output, but the
+# splits actually used going forward are the ones published here.
+HF_DATASET_ID = "pulipakav-1/dravidian"
+
+
+def download_split(language: str, split: str) -> Path:
+    """Download a {language}/{split}/{language}_{split}_cleaned_final.txt file.
+
+    `language` is the full name (telugu/tamil/kannada/malayalam), matching the
+    directory layout of hf://datasets/pulipakav-1/dravidian.
+    """
+    repo_path = f"{language}/{split}/{language}_{split}_cleaned_final.txt"
+    return Path(
+        hf_hub_download(HF_DATASET_ID, repo_path, repo_type="dataset")
+    )
 
 
 @dataclass
@@ -115,52 +129,24 @@ def eval_perplexity(
 def run_perplexity_suite(
     tokenizer: PreTrainedTokenizer,
     model: GPT2LMHeadModel,
-    language_code: str,
+    language: str,
     device: str,
     max_eval_lines: int = 5_000,
     batch_size: int = 8,
 ) -> dict:
-    """Run perplexity on the overall test split and each per-source split."""
+    """Run perplexity on the held-out test split from hf://datasets/pulipakav-1/dravidian."""
     results: dict = {}
 
-    test_path = SPLITS_DIR / language_code / f"{language_code}_test.txt"
-    if test_path.exists():
-        texts = load_texts(test_path, max_lines=max_eval_lines)
-        result = eval_perplexity(
-            texts, tokenizer, model, device, source="overall", batch_size=batch_size
-        )
-        results["overall"] = result.to_dict()
-        print(
-            f"  [perplexity] overall      : "
-            f"loss={result.eval_loss:.4f}  ppl={result.perplexity:.2f}  "
-            f"bpb={result.bpb:.4f}  ({result.num_sequences:,} seqs)"
-        )
-    else:
-        print(f"  [perplexity] test split not found: {test_path}")
-
-    per_source: dict = {}
-    per_line_limit = max(1, max_eval_lines // len(SOURCES))
-    for source in SOURCES:
-        src_path = SPLITS_DIR / language_code / f"{language_code}_test_{source}.txt"
-        if not src_path.exists():
-            continue
-        texts = load_texts(src_path, max_lines=per_line_limit)
-        result = eval_perplexity(
-            texts, tokenizer, model, device, source=source, batch_size=batch_size
-        )
-        per_source[source] = result.to_dict()
-        print(
-            f"  [perplexity] {source:<12}: "
-            f"loss={result.eval_loss:.4f}  ppl={result.perplexity:.2f}  "
-            f"bpb={result.bpb:.4f}"
-        )
-
-    if per_source:
-        results["per_source"] = per_source
-    else:
-        print(
-            "  [perplexity] per-source splits not found; "
-            "create data/splits/te/te_test_{cc100,wiki,samanantar}.txt to enable"
-        )
+    test_path = download_split(language, "test")
+    texts = load_texts(test_path, max_lines=max_eval_lines)
+    result = eval_perplexity(
+        texts, tokenizer, model, device, source="overall", batch_size=batch_size
+    )
+    results["overall"] = result.to_dict()
+    print(
+        f"  [perplexity] overall      : "
+        f"loss={result.eval_loss:.4f}  ppl={result.perplexity:.2f}  "
+        f"bpb={result.bpb:.4f}  ({result.num_sequences:,} seqs)"
+    )
 
     return results
