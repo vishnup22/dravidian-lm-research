@@ -1,0 +1,70 @@
+{
+  "model": "pulipakav-1/dravidian-gpt2-multi",
+  "language": "telugu",
+  "language_code": "te",
+  "evaluation_date": "2026-08-03T21:53:24.052889+00:00",
+  "device": "cuda",
+  "seed": 42,
+  "downstream": {
+    "indicsentiment": {
+      "pulipakav-1/dravidian-gpt2-multi": {
+        "task": "indicsentiment_te",
+        "model_name": "pulipakav-1/dravidian-gpt2-multi",
+        "metric_name": "accuracy",
+        "score": 0.6667,
+        "num_train": 109,
+        "num_test": 24,
+        "details": {
+          "accuracy": 0.6666666666666666
+        }
+      },
+      "ai-forever/mGPT": {
+        "task": "indicsentiment_te",
+        "model_name": "ai-forever/mGPT",
+        "metric_name": "accuracy",
+        "score": 0.5417,
+        "num_train": 109,
+        "num_test": 24,
+        "details": {
+          "accuracy": 0.5416666666666666
+        }
+      }
+    },
+    "wikiann_ner": {
+      "pulipakav-1/dravidian-gpt2-multi": {
+        "task": "wikiann_ner_te",
+        "model_name": "pulipakav-1/dravidian-gpt2-multi",
+        "metric_name": "f1",
+        "score": 0.5605,
+        "num_train": 1000,
+        "num_test": 1000,
+        "details": {
+          "f1": 0.5605045329128892,
+          "precision": 0.5204978038067349,
+          "recall": 0.6071733561058924
+        }
+      },
+      "ai-forever/mGPT": {
+        "task": "wikiann_ner_te",
+        "model_name": "ai-forever/mGPT",
+        "metric_name": "f1",
+        "score": 0.2699,
+        "num_train": 1000,
+        "num_test": 1000,
+        "details": {
+          "f1": 0.269909768536681,
+          "precision": 0.24963715529753266,
+          "recall": 0.2937660119555935
+        }
+      }
+    },
+    "indicxnli": {
+      "pulipakav-1/dravidian-gpt2-multi": {
+        "error": "te NLI skipped: ai4bharat/IndicXNLI uses a deprecated loading script and te is not included in facebook/xnli."
+      },
+      "ai-forever/mGPT": {
+        "error": "te NLI skipped: ai4bharat/IndicXNLI uses a deprecated loading script and te is not included in facebook/xnli."
+      }
+    }
+  }
+}

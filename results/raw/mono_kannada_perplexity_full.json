@@ -1,0 +1,19 @@
+{
+  "model": "pulipakav-1/dravidian-gpt2-kannada",
+  "language": "kannada",
+  "evaluation_date": "2026-08-03T20:54:05.002205+00:00",
+  "device": "cuda",
+  "max_eval_lines": null,
+  "elapsed_seconds": 251.5,
+  "perplexity": {
+    "overall": {
+      "source": "overall",
+      "num_sequences": 352025,
+      "num_tokens": 3571107,
+      "num_bytes": 53318519,
+      "eval_loss": 3.953707,
+      "perplexity": 52.1283,
+      "bpb": 0.382036
+    }
+  }
+}
