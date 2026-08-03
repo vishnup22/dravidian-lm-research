@@ -38,50 +38,62 @@ Notes:
   tokenizer produces fewer, "cheaper" tokens per byte, which flatters raw perplexity while BPB
   corrects for it.
 
-## 2. Tokenizer efficiency **(unverified — Telugu only, not yet saved to disk)**
+## 2. Tokenizer efficiency
 
-Source: console output from an interrupted run; never written to `results/raw/`. Tamil, Kannada,
-Malayalam not yet run. Sample: 2,000 test-split sentences.
+Source: `results/raw/{language}_full_eval.json` (`tokenizer_analysis` key), all four languages.
+Sample: 2,000 test-split sentences per language.
 
-| Tokenizer | Vocab | Fertility (tok/word) | Compression (bytes/tok) | UNK rate |
-|---|---:|---:|---:|---:|
-| dravidian-gpt2-telugu (ours) | 32,000 | 1.61 | 13.12 | 0.00% |
-| XLM-R | 250,002 | 2.37 | 8.93 | 0.00% |
-| mBERT | 119,547 | 3.88 | 5.45 | 0.24% |
-| mGPT | 100,000 | 6.19 | 3.41 | 0.00% |
+| Language | Ours vocab | Ours fertility | Ours compression | XLM-R fert. | mBERT fert. | mGPT fert. | mGPT compression |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Telugu | 32,000 | 1.61 | 13.12 | 2.37 | 3.88 | 6.19 | 3.41 |
+| Tamil | 32,000 | 1.66 | 14.80 | 2.42 | 3.73 | 6.98 | 3.53 |
+| Kannada | 32,000 | 1.59 | 13.60 | 2.40 | 3.95 | **16.39** | **1.32** |
+| Malayalam | 32,000 | 1.84 | 14.46 | 2.58 | 5.02 | 7.87 | 3.38 |
 
-Our dedicated tokenizer is markedly more efficient than every multilingual baseline despite a
-much smaller vocabulary (32K vs. 100K–250K) — lower fertility and higher compression than
-XLM-R/mBERT/mGPT, and zero UNKs. **TODO: re-run for Tamil, Kannada, Malayalam and persist to
-`results/raw/`.**
+Our dedicated per-language tokenizer beats every multilingual baseline on every language, despite
+a much smaller vocabulary (32K vs. 100K–250K) — consistently the lowest fertility and highest
+compression, with ~0% UNK rate everywhere (mBERT is the only baseline with any UNKs, 0.2–0.3%).
+**mGPT's Kannada tokenization is a clear outlier** — 16.39 tokens/word and 1.32 bytes/token, 2–2.5×
+worse than mGPT's own numbers on the other three Dravidian languages — suggesting mGPT's
+tokenizer has little to no real Kannada-script coverage and is falling back to heavy
+byte-fragmentation. Worth citing explicitly as a concrete example of why dedicated tokenization
+matters, not just an aggregate stat.
 
-## 3. Downstream fine-tuning (verified against console output, pasted twice consistently)
+## 3. Downstream fine-tuning
 
 Full fine-tuning, 5 epochs, IndicSentiment (accuracy) + WikiANN NER (span F1), vs. mGPT baseline
-fine-tuned identically. IndicSentiment test set is small (~24 examples, self-split from
-IndicSentiment's `validation` data — see Section 5 caveat); NER test set is the standard WikiANN
-1,000-example split.
+fine-tuned identically. Source: `results/raw/{language}_full_eval.json` (`downstream` key) — this
+supersedes an earlier version of this table built from a pasted console summary, which showed
+**substantially different numbers for Tamil, Kannada, and Malayalam** (Telugu was unchanged and
+matches). See the variance note below before treating any of this as stable.
 
-| Language | Model | IndicSentiment acc. | mGPT acc. | NER F1 | mGPT F1 |
-|---|---|---:|---:|---:|---:|
-| Telugu | Monolingual | **0.7083** | 0.6250 | **0.6092** | 0.3039 |
-| Telugu | Multilingual | 0.6667 | 0.5417 | 0.5605 | 0.2699 |
-| Tamil | Monolingual | 0.4167 | **0.6250** | 0.2031 | **0.2809** |
-| Kannada | Monolingual | 0.5833 | **0.6250** | 0.1676 | **0.2845** |
-| Malayalam | Monolingual | **0.5417** | 0.5000 | 0.2054 | **0.2773** |
+| Language | Model | IndicSentiment acc. | mGPT acc. | NER F1 | mGPT F1 | NER train n |
+|---|---|---:|---:|---:|---:|---:|
+| Telugu | Monolingual | **0.7083** | 0.6250 | **0.6092** | 0.3039 | 1,000 |
+| Telugu | Multilingual | 0.6667 | 0.5417 | 0.5605 | 0.2699 | 1,000 |
+| Tamil | Monolingual | **0.7917** | 0.4583 | **0.6411** | 0.3838 | 15,000 |
+| Kannada | Monolingual | **0.7917** | 0.5417 | **0.2677** | 0.0341 | 100 |
+| Malayalam | Monolingual | **0.8750** | 0.4583 | **0.6579** | 0.3331 | 10,000 |
 
 IndicXNLI was attempted but is permanently out of scope: `ai4bharat/IndicXNLI` uses a deprecated
 Hub loading script, and none of our four languages are covered by the `facebook/xnli` fallback.
 
 Notes:
-- Telugu (both mono and multi) clearly beats mGPT on both tasks. Tamil and Kannada lose to
-  mGPT on both tasks. Malayalam is roughly split (slightly ahead on sentiment, behind on NER).
-  This asymmetry is worth investigating rather than reporting flat — it doesn't obviously
-  track corpus size or perplexity rank (Malayalam has the *best* perplexity of the four but a
-  middling downstream result).
-- **IndicSentiment accuracy is noisy at n≈24 test examples** — one example = ~4 points of
-  accuracy. Don't treat small deltas (e.g. Malayalam's 0.5417 vs 0.5000) as meaningful; NER F1
-  at n=1,000 is the more trustworthy of the two downstream numbers.
+- **This run: our monolingual model beats mGPT on every task for every language.** That's a much
+  cleaner story than the earlier console-paste version of this table (where Tamil and Kannada lost
+  to mGPT on both tasks) — and the fact that *both* stories came from nominally the same
+  `--seed 42` run is itself the important finding, not either individual result: fine-tuning on
+  these dataset sizes is not reproducible run-to-run. Sources of non-determinism: task execution
+  order affects how far the RNG has advanced before fine-tuning starts, plus standard CUDA/cuDNN
+  non-determinism.
+- **IndicSentiment (n=24 test) and Kannada NER (n=100 train / n=100 test — WikiANN's Kannada
+  split is far smaller than the other three languages') are both too small to trust a single run
+  of.** Before putting any of this in the paper as a headline result, either (a) run several
+  seeds and report mean ± stddev, or (b) explicitly caveat every downstream number as
+  single-run/high-variance. Reporting either version of this table as-is, unqualified, risks a
+  reviewer catching the instability themselves.
+- NER F1 at n=1,000 (Telugu, Tamil, Malayalam) is comparatively more trustworthy than Kannada's
+  n=100 or IndicSentiment's n=24, but "more trustworthy" here is relative, not absolute.
 - Multi-model downstream scores only exist for Telugu so far; Tamil/Kannada/Malayalam not yet
   run for the multilingual model.
 
@@ -172,10 +184,12 @@ released and evaluated, but the limitation needs to be disclosed in the paper re
 
 ## 6. Outstanding work
 
-- [ ] Tokenizer efficiency: Tamil, Kannada, Malayalam (Telugu done but unsaved — re-run all four)
-- [ ] Downstream: confirm the four monolingual `_full_eval.json` files are pushed/pulled and
-      correctly attributed (the Telugu file was previously mislabeled — verify it now says
-      `dravidian-gpt2-telugu`, not `-multi`)
+- [x] Tokenizer efficiency: all four languages done and saved (Section 2)
+- [x] Downstream: all four monolingual `_full_eval.json` files pushed/pulled and correctly
+      attributed (Section 3)
+- [ ] **Downstream reproducibility: re-run at least 2-3 more seeds per language and report
+      mean ± stddev before treating Section 3's numbers as a headline result** — the two runs
+      seen so far for the same nominal seed disagree substantially for Tamil/Kannada/Malayalam
 - [ ] Downstream: multilingual model on Tamil, Kannada, Malayalam (only Telugu done)
 - [ ] Resolve the balanced/curriculum data-provenance question in Section 5
 - [ ] Decide how to disclose the multilingual model's training divergence (Section 4) in the
