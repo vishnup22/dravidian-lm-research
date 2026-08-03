@@ -59,6 +59,11 @@ def parse_args() -> argparse.Namespace:
         help="Also evaluate dravidian-gpt2-multi against every selected language's test split.",
     )
     parser.add_argument(
+        "--skip_mono",
+        action="store_true",
+        help="Skip the monolingual models entirely (use with --include_multi to only score multi).",
+    )
+    parser.add_argument(
         "--max_eval_lines",
         type=int,
         default=None,
@@ -110,11 +115,12 @@ def main() -> None:
 
     all_results = []
 
-    for language in args.languages:
-        model_id = LANGUAGE_TO_MODEL[language]
-        all_results.append(
-            eval_one(model_id, language, device, args.max_eval_lines, args.batch_size, tag="mono")
-        )
+    if not args.skip_mono:
+        for language in args.languages:
+            model_id = LANGUAGE_TO_MODEL[language]
+            all_results.append(
+                eval_one(model_id, language, device, args.max_eval_lines, args.batch_size, tag="mono")
+            )
 
     if args.include_multi:
         for language in args.languages:
