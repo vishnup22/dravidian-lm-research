@@ -101,6 +101,28 @@ def main() -> None:
     plt.close()
     print(f"Saved -> {ppl_path}")
 
+    # ---- Per-model figures: loss + perplexity side by side ----
+    for name, c in curves.items():
+        fig, (ax_loss, ax_ppl) = plt.subplots(1, 2, figsize=(11, 4.5))
+
+        ax_loss.plot(c["train_steps"], c["train_loss"], linewidth=1.0, color="tab:blue")
+        ax_loss.set_xlabel("Training step")
+        ax_loss.set_ylabel("Training loss (cross-entropy, nats)")
+        ax_loss.set_title("Training loss")
+
+        ax_ppl.plot(c["eval_epoch"], c["eval_perplexity"], marker="o", color="tab:orange")
+        ax_ppl.set_xlabel("Epoch")
+        ax_ppl.set_ylabel("Validation perplexity")
+        ax_ppl.set_title("Validation perplexity")
+
+        fig.suptitle(f"dravidian-gpt2-{name}")
+        fig.tight_layout()
+        model_path = FIGURES_DIR / f"{name}_training_curve.png"
+        fig.savefig(model_path, dpi=200)
+        fig.savefig(FIGURES_DIR / f"{name}_training_curve.pdf")
+        plt.close(fig)
+        print(f"Saved -> {model_path}")
+
 
 if __name__ == "__main__":
     main()
