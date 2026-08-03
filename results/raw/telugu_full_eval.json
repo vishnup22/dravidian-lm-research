@@ -1,65 +1,95 @@
 {
-  "model": "pulipakav-1/dravidian-gpt2-multi",
+  "model": "pulipakav-1/dravidian-gpt2-telugu",
   "language": "telugu",
   "language_code": "te",
-  "evaluation_date": "2026-08-03T21:53:24.052889+00:00",
+  "evaluation_date": "2026-08-03T22:06:59.022358+00:00",
   "device": "cuda",
   "seed": 42,
+  "tokenizer_analysis": {
+    "dravidian-gpt2-telugu": {
+      "name": "dravidian-gpt2-telugu",
+      "vocab_size": 32000,
+      "fertility": 1.6098,
+      "compression_ratio": 13.1216,
+      "unk_rate": 0.0
+    },
+    "xlm-roberta-base": {
+      "name": "xlm-roberta-base",
+      "vocab_size": 250002,
+      "fertility": 2.3663,
+      "compression_ratio": 8.9268,
+      "unk_rate": 0.0
+    },
+    "mbert": {
+      "name": "mbert",
+      "vocab_size": 119547,
+      "fertility": 3.8776,
+      "compression_ratio": 5.4474,
+      "unk_rate": 0.002442
+    },
+    "mgpt": {
+      "name": "mgpt",
+      "vocab_size": 100000,
+      "fertility": 6.1938,
+      "compression_ratio": 3.4104,
+      "unk_rate": 0.0
+    }
+  },
   "downstream": {
     "indicsentiment": {
-      "pulipakav-1/dravidian-gpt2-multi": {
+      "pulipakav-1/dravidian-gpt2-telugu": {
         "task": "indicsentiment_te",
-        "model_name": "pulipakav-1/dravidian-gpt2-multi",
+        "model_name": "pulipakav-1/dravidian-gpt2-telugu",
         "metric_name": "accuracy",
-        "score": 0.6667,
+        "score": 0.7083,
         "num_train": 109,
         "num_test": 24,
         "details": {
-          "accuracy": 0.6666666666666666
+          "accuracy": 0.7083333333333334
         }
       },
       "ai-forever/mGPT": {
         "task": "indicsentiment_te",
         "model_name": "ai-forever/mGPT",
         "metric_name": "accuracy",
-        "score": 0.5417,
+        "score": 0.625,
         "num_train": 109,
         "num_test": 24,
         "details": {
-          "accuracy": 0.5416666666666666
+          "accuracy": 0.625
         }
       }
     },
     "wikiann_ner": {
-      "pulipakav-1/dravidian-gpt2-multi": {
+      "pulipakav-1/dravidian-gpt2-telugu": {
         "task": "wikiann_ner_te",
-        "model_name": "pulipakav-1/dravidian-gpt2-multi",
+        "model_name": "pulipakav-1/dravidian-gpt2-telugu",
         "metric_name": "f1",
-        "score": 0.5605,
+        "score": 0.6092,
         "num_train": 1000,
         "num_test": 1000,
         "details": {
-          "f1": 0.5605045329128892,
-          "precision": 0.5204978038067349,
-          "recall": 0.6071733561058924
+          "f1": 0.6091772151898734,
+          "precision": 0.5674281503316139,
+          "recall": 0.6575576430401366
         }
       },
       "ai-forever/mGPT": {
         "task": "wikiann_ner_te",
         "model_name": "ai-forever/mGPT",
         "metric_name": "f1",
-        "score": 0.2699,
+        "score": 0.3039,
         "num_train": 1000,
         "num_test": 1000,
         "details": {
-          "f1": 0.269909768536681,
-          "precision": 0.24963715529753266,
-          "recall": 0.2937660119555935
+          "f1": 0.30389992641648267,
+          "precision": 0.2669683257918552,
+          "recall": 0.35269000853970967
         }
       }
     },
     "indicxnli": {
-      "pulipakav-1/dravidian-gpt2-multi": {
+      "pulipakav-1/dravidian-gpt2-telugu": {
         "error": "te NLI skipped: ai4bharat/IndicXNLI uses a deprecated loading script and te is not included in facebook/xnli."
       },
       "ai-forever/mGPT": {

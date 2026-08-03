@@ -1,0 +1,100 @@
+{
+  "model": "pulipakav-1/dravidian-gpt2-kannada",
+  "language": "kannada",
+  "language_code": "kn",
+  "evaluation_date": "2026-08-03T22:32:26.557693+00:00",
+  "device": "cuda",
+  "seed": 42,
+  "tokenizer_analysis": {
+    "dravidian-gpt2-kannada": {
+      "name": "dravidian-gpt2-kannada",
+      "vocab_size": 32000,
+      "fertility": 1.5936,
+      "compression_ratio": 13.5964,
+      "unk_rate": 0.0
+    },
+    "xlm-roberta-base": {
+      "name": "xlm-roberta-base",
+      "vocab_size": 250002,
+      "fertility": 2.3966,
+      "compression_ratio": 9.0411,
+      "unk_rate": 0.0
+    },
+    "mbert": {
+      "name": "mbert",
+      "vocab_size": 119547,
+      "fertility": 3.9545,
+      "compression_ratio": 5.4791,
+      "unk_rate": 0.002817
+    },
+    "mgpt": {
+      "name": "mgpt",
+      "vocab_size": 100000,
+      "fertility": 16.39,
+      "compression_ratio": 1.322,
+      "unk_rate": 0.0
+    }
+  },
+  "downstream": {
+    "indicsentiment": {
+      "pulipakav-1/dravidian-gpt2-kannada": {
+        "task": "indicsentiment_kn",
+        "model_name": "pulipakav-1/dravidian-gpt2-kannada",
+        "metric_name": "accuracy",
+        "score": 0.7917,
+        "num_train": 109,
+        "num_test": 24,
+        "details": {
+          "accuracy": 0.7916666666666666
+        }
+      },
+      "ai-forever/mGPT": {
+        "task": "indicsentiment_kn",
+        "model_name": "ai-forever/mGPT",
+        "metric_name": "accuracy",
+        "score": 0.5417,
+        "num_train": 109,
+        "num_test": 24,
+        "details": {
+          "accuracy": 0.5416666666666666
+        }
+      }
+    },
+    "wikiann_ner": {
+      "pulipakav-1/dravidian-gpt2-kannada": {
+        "task": "wikiann_ner_kn",
+        "model_name": "pulipakav-1/dravidian-gpt2-kannada",
+        "metric_name": "f1",
+        "score": 0.2677,
+        "num_train": 100,
+        "num_test": 100,
+        "details": {
+          "f1": 0.2677165354330709,
+          "precision": 0.23943661971830985,
+          "recall": 0.30357142857142855
+        }
+      },
+      "ai-forever/mGPT": {
+        "task": "wikiann_ner_kn",
+        "model_name": "ai-forever/mGPT",
+        "metric_name": "f1",
+        "score": 0.0341,
+        "num_train": 100,
+        "num_test": 100,
+        "details": {
+          "f1": 0.034129692832764506,
+          "precision": 0.027624309392265192,
+          "recall": 0.044642857142857144
+        }
+      }
+    },
+    "indicxnli": {
+      "pulipakav-1/dravidian-gpt2-kannada": {
+        "error": "kn NLI skipped: ai4bharat/IndicXNLI uses a deprecated loading script and kn is not included in facebook/xnli."
+      },
+      "ai-forever/mGPT": {
+        "error": "kn NLI skipped: ai4bharat/IndicXNLI uses a deprecated loading script and kn is not included in facebook/xnli."
+      }
+    }
+  }
+}
