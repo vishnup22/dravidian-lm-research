@@ -80,10 +80,18 @@ def _train_and_eval(
     lr: float = FINETUNE_LR,
     batch_size: int = FINETUNE_BATCH,
 ):
-    """Train for `epochs` epochs, return (logits_np, labels_np) on test set."""
+    """Train for `epochs` epochs, return (logits_np, labels_np) on test set.
+
+    Model weights must be fp32 here (see callers) — training a raw fp16 copy
+    with plain AdamW has no float32 master weights or loss scaling, so
+    AdamW's fp16 moment buffers underflow almost immediately and loss goes
+    to NaN within a step or two. autocast(enabled=cuda) + GradScaler is the
+    standard mixed-precision recipe: fp32 weights, fp16 compute, scaled
+    gradients.
+    """
     model = model.to(device)
-    # fp16 models need float32 optimizer states
     optimizer = AdamW(model.parameters(), lr=lr, weight_decay=WEIGHT_DECAY)
+    scaler = torch.amp.GradScaler("cuda", enabled=(device == "cuda"))
 
     train_loader = DataLoader(
         train_ds, batch_size=batch_size, shuffle=True, collate_fn=collate_fn
@@ -97,13 +105,15 @@ def _train_and_eval(
         total_loss, n_steps = 0.0, 0
         for batch in train_loader:
             batch = {k: v.to(device) for k, v in batch.items()}
-            with torch.cuda.amp.autocast(enabled=(device == "cuda")):
+            optimizer.zero_grad()
+            with torch.amp.autocast("cuda", enabled=(device == "cuda")):
                 outputs = model(**batch)
             loss = outputs.loss
-            loss.backward()
+            scaler.scale(loss).backward()
+            scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            optimizer.step()
-            optimizer.zero_grad()
+            scaler.step(optimizer)
+            scaler.update()
             total_loss += loss.item()
             n_steps += 1
         print(f"    epoch {epoch + 1}/{epochs}  loss={total_loss / max(n_steps, 1):.4f}")
@@ -113,15 +123,44 @@ def _train_and_eval(
     with torch.no_grad():
         for batch in test_loader:
             batch = {k: v.to(device) for k, v in batch.items()}
-            with torch.cuda.amp.autocast(enabled=(device == "cuda")):
+            with torch.amp.autocast("cuda", enabled=(device == "cuda")):
                 outputs = model(**batch)
-            all_logits.append(outputs.logits.detach().cpu().float().numpy())
+            # Token-classification logits/labels carry a sequence dimension
+            # that DataCollatorForTokenClassification pads per-batch (to
+            # that batch's own longest example), so different batches end
+            # up with different dim-1 sizes. Pad every batch out to the
+            # fixed max length used at preprocessing time so the final
+            # np.concatenate across batches doesn't hit a shape mismatch.
+            # Sequence-classification logits/labels have no such dimension
+            # (ndim 2 / 1) and pass through unchanged.
+            logits = _pad_seq_dim(outputs.logits, DOWNSTREAM_MAX_LEN, 0.0, seq_dim_ndim=3)
+            all_logits.append(logits.detach().cpu().float().numpy())
             if "labels" in batch:
-                all_labels.append(batch["labels"].detach().cpu().numpy())
+                labels = _pad_seq_dim(batch["labels"], DOWNSTREAM_MAX_LEN, -100, seq_dim_ndim=2)
+                all_labels.append(labels.detach().cpu().numpy())
 
     logits = np.concatenate(all_logits, axis=0)
     labels = np.concatenate(all_labels, axis=0) if all_labels else np.array([])
     return logits, labels
+
+
+def _pad_seq_dim(t: torch.Tensor, length: int, value: float, seq_dim_ndim: int) -> torch.Tensor:
+    """Pad/truncate dim 1 (the sequence dimension) to `length`.
+
+    Only applies to tensors with exactly `seq_dim_ndim` dims — token
+    classification logits are (batch, seq, num_labels)=3D and labels are
+    (batch, seq)=2D; sequence classification logits are (batch, num_labels)
+    =2D and labels are (batch,)=1D, so this is a no-op for those.
+    """
+    if t.dim() != seq_dim_ndim:
+        return t
+    cur = t.size(1)
+    if cur >= length:
+        return t[:, :length, ...]
+    pad = length - cur
+    if t.dim() == 2:
+        return torch.nn.functional.pad(t, (0, pad), value=value)
+    return torch.nn.functional.pad(t, (0, 0, 0, pad), value=value)
 
 
 # ---------------------------------------------------------------------------
@@ -147,7 +186,9 @@ def _load_seq_clf_model(
     num_labels: int,
     pad_token_id: int,
 ) -> GPT2ForSequenceClassification:
-    dtype = torch.float16 if torch.cuda.is_available() else torch.float32
+    # fp32 master weights — _train_and_eval's autocast+GradScaler handles the
+    # fp16 compute; loading raw fp16 weights here has no fp32 master copy and
+    # trains to NaN (see _train_and_eval docstring).
     config = GPT2Config.from_pretrained(
         model_name,
         num_labels=num_labels,
@@ -157,7 +198,7 @@ def _load_seq_clf_model(
         model_name,
         config=config,
         ignore_mismatched_sizes=True,
-        torch_dtype=dtype,
+        torch_dtype=torch.float32,
     )
     model.config.pad_token_id = pad_token_id
     return model
@@ -170,32 +211,38 @@ def _load_seq_clf_model(
 def _load_indicsentiment(language_code: str) -> DatasetDict:
     """Load IndicSentiment for one language directly from HF Hub file-level download.
 
-    The repo only has data/{test,validation}/{lang}.json (JSONL format).
-    We create a synthetic train split from 80 % of validation.
+    The upstream `test` split carries no public gold labels (held out for a
+    leaderboard) — only data/validation/{lang}.json has real labels, so we
+    partition that split ourselves into train/validation/test (70/15/15)
+    instead of evaluating against the label-less official test split.
     """
     import json
     from huggingface_hub import hf_hub_download
 
-    splits: dict[str, Dataset] = {}
-    for hf_split in ("test", "validation"):
-        repo_path = f"data/{hf_split}/{language_code}.json"
-        try:
-            local = hf_hub_download(
-                "ai4bharat/IndicSentiment", repo_path, repo_type="dataset"
-            )
-        except Exception as exc:
-            raise RuntimeError(
-                f"Cannot download {repo_path} from ai4bharat/IndicSentiment: {exc}"
-            ) from exc
-        with open(local, encoding="utf-8") as f:
-            records = [json.loads(line) for line in f if line.strip()]
-        splits[hf_split] = Dataset.from_list(records)
+    repo_path = f"data/validation/{language_code}.json"
+    try:
+        local = hf_hub_download(
+            "ai4bharat/IndicSentiment", repo_path, repo_type="dataset"
+        )
+    except Exception as exc:
+        raise RuntimeError(
+            f"Cannot download {repo_path} from ai4bharat/IndicSentiment: {exc}"
+        ) from exc
+    with open(local, encoding="utf-8") as f:
+        records = [json.loads(line) for line in f if line.strip()]
 
-    val_shuffled = splits["validation"].shuffle(seed=42)
-    n_train = int(0.8 * len(val_shuffled))
-    splits["train"] = val_shuffled.select(range(n_train))
-    splits["validation"] = val_shuffled.select(range(n_train, len(val_shuffled)))
-    return DatasetDict(splits)
+    shuffled = Dataset.from_list(records).shuffle(seed=42)
+    n = len(shuffled)
+    n_train = int(0.7 * n)
+    n_val = int(0.15 * n)
+
+    return DatasetDict(
+        {
+            "train": shuffled.select(range(n_train)),
+            "validation": shuffled.select(range(n_train, n_train + n_val)),
+            "test": shuffled.select(range(n_train + n_val, n)),
+        }
+    )
 
 
 def run_indicsentiment(
@@ -321,7 +368,6 @@ def run_wikiann_ner(
     tokenized = ds.map(preprocess, remove_columns=drop_cols)
     tokenized.set_format("torch")
 
-    dtype = torch.float16 if torch.cuda.is_available() else torch.float32
     config = GPT2Config.from_pretrained(
         model_name,
         num_labels=len(label_list),
@@ -329,8 +375,9 @@ def run_wikiann_ner(
         label2id=label2id,
         pad_token_id=tokenizer.pad_token_id,
     )
+    # fp32 master weights — see _load_seq_clf_model / _train_and_eval.
     model = GPT2ForTokenClassification.from_pretrained(
-        model_name, config=config, ignore_mismatched_sizes=True, torch_dtype=dtype
+        model_name, config=config, ignore_mismatched_sizes=True, torch_dtype=torch.float32
     )
 
     collator = DataCollatorForTokenClassification(tokenizer=tokenizer)
