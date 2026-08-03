@@ -92,7 +92,7 @@ def main() -> None:
         plt.plot(c["train_steps"], c["train_loss"], linewidth=1.0, color="tab:blue")
         plt.xlabel("Training step")
         plt.ylabel("Training loss (cross-entropy, nats)")
-        plt.title(f"dravidian-gpt2-{name}: training loss")
+        plt.title(f"{name}-gpt2: training loss")
         plt.tight_layout()
         model_path = FIGURES_DIR / f"{name}_training_curve.png"
         plt.savefig(model_path, dpi=200)
