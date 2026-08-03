@@ -7,6 +7,7 @@ from typing import Optional
 
 import torch
 from huggingface_hub import hf_hub_download
+from tqdm import tqdm
 from transformers import GPT2LMHeadModel, PreTrainedTokenizer
 
 
@@ -78,7 +79,7 @@ def eval_perplexity(
     total_bytes = 0
     n_sequences = 0
 
-    for i in range(0, len(texts), batch_size):
+    for i in tqdm(range(0, len(texts), batch_size), desc=f"perplexity[{source}]", unit="batch"):
         batch = texts[i : i + batch_size]
         enc = tokenizer(
             batch,
