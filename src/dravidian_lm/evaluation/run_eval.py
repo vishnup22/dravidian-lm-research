@@ -157,7 +157,7 @@ def load_model_and_tokenizer(model_name: str, device: str):
     tokenizer = load_tokenizer_from_hub(model_name)
 
     dtype = torch.float16 if device.startswith("cuda") else torch.float32
-    model = AutoModelForCausalLM.from_pretrained(model_name, dtype=dtype)
+    model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=dtype)
     model.to(device)
     model.eval()
 
