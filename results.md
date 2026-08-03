@@ -116,8 +116,8 @@ cosine, bf16/tf32.
 `trainer_state.json` (`log_history` is cumulative — the last checkpoint alone has the whole run's
 training-loss-every-200-steps and eval-loss-every-epoch history; see
 `src/dravidian_lm/analysis/plot_training_curves.py`, output in `results/raw/training_curves.json`
-and `results/figures/{telugu,tamil,malayalam,multi}_training_curve.{png,pdf}` plus the combined
-`training_loss.{png,pdf}`). Covers Telugu, Tamil, Malayalam, and the multilingual model —
+and `results/figures/{telugu,tamil,malayalam,multi}_training_curve.{png,pdf}`, one figure per
+model). Covers Telugu, Tamil, Malayalam, and the multilingual model —
 **Kannada has no checkpoint subfolders on the Hub, and the local checkpoint has since been
 deleted from the training cluster, so this gap is permanent**: no training curve is recoverable
 for Kannada, only the single final data point in the local-seed-log table above.

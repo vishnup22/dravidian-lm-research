@@ -71,21 +71,6 @@ def main() -> None:
     out_path.write_text(json.dumps(curves, indent=2), encoding="utf-8")
     print(f"Saved curve data -> {out_path}")
 
-    # ---- Figure 1: training loss vs. step ----
-    plt.figure(figsize=(7, 4.5))
-    for name, c in curves.items():
-        plt.plot(c["train_steps"], c["train_loss"], label=name, linewidth=1.2)
-    plt.xlabel("Training step")
-    plt.ylabel("Training loss (cross-entropy, nats)")
-    plt.title("Pretraining loss")
-    plt.legend()
-    plt.tight_layout()
-    loss_path = FIGURES_DIR / "training_loss.png"
-    plt.savefig(loss_path, dpi=200)
-    plt.savefig(FIGURES_DIR / "training_loss.pdf")
-    plt.close()
-    print(f"Saved -> {loss_path}")
-
     # ---- Per-model figures: training loss only ----
     for name, c in curves.items():
         plt.figure(figsize=(7, 4.5))
