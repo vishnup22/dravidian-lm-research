@@ -105,9 +105,11 @@ cosine, bf16/tf32.
 `trainer_state.json` (`log_history` is cumulative — the last checkpoint alone has the whole run's
 training-loss-every-200-steps and eval-loss-every-epoch history; see
 `src/dravidian_lm/analysis/plot_training_curves.py`, output in `results/raw/training_curves.json`
-and `results/figures/{training_loss,validation_perplexity}.{png,pdf}`). Covers Telugu, Tamil,
-Malayalam, and the multilingual model — **Kannada has no checkpoint subfolders uploaded to the
-Hub**, only the final merged model, so no curve exists for it beyond the single point above.
+and `results/figures/{telugu,tamil,malayalam,multi}_training_curve.{png,pdf}` plus the combined
+`training_loss.{png,pdf}`). Covers Telugu, Tamil, Malayalam, and the multilingual model —
+**Kannada has no checkpoint subfolders on the Hub, and the local checkpoint has since been
+deleted from the training cluster, so this gap is permanent**: no training curve is recoverable
+for Kannada, only the single final data point in the local-seed-log table above.
 
 | Model | Eval epoch(s) | Eval loss | Eval perplexity |
 |---|---|---|---|
@@ -178,5 +180,6 @@ released and evaluated, but the limitation needs to be disclosed in the paper re
 - [ ] Resolve the balanced/curriculum data-provenance question in Section 5
 - [ ] Decide how to disclose the multilingual model's training divergence (Section 4) in the
       paper — this is a real limitation on the multi-vs-mono comparison, not optional detail
-- [ ] Kannada has no checkpoint history on the Hub — confirm whether it's recoverable from the
-      SLURM cluster's local disk if a full curve is wanted for consistency with the other three
+- [x] Kannada checkpoint recoverability — confirmed unrecoverable (deleted from the SLURM
+      cluster's local disk and never pushed to the Hub). No training curve is possible for
+      Kannada; the single final data point in Section 4's local-seed-log table is all that exists.
