@@ -5,6 +5,7 @@ numpy
 seqeval
 sentencepiece
 torch
-transformers
+transformers<5
+tokenizers<0.21
 tqdm
 PyYAML

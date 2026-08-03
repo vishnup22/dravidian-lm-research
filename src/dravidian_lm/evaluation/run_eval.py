@@ -127,15 +127,28 @@ def load_tokenizer_from_hub(model_name: str) -> T5TokenizerFast:
     from), so always load from that instead of trusting tokenizer.json.
 
     Must use T5TokenizerFast, not the slow T5Tokenizer: the slow tokenizer
-    misparses this custom Unigram SentencePiece model (silently collapses
+    misparses this custom BPE-type SentencePiece model (silently collapses
     to a ~4-token vocab) — see train.py's load_tokenizer() and the "Use
     T5TokenizerFast instead of slow Python T5Tokenizer" fix in this repo's
-    history.
+    history. transformers>=5 reproduces the same collapse in *both* the
+    slow and fast loaders (T5Tokenizer no longer wraps sp_model directly
+    in 5.x, so it hits the same broken conversion path) — pyproject.toml
+    pins transformers<5 to avoid it; the assertion below exists so any
+    future regression fails in seconds instead of silently corrupting an
+    hours-long eval run.
     """
     vocab_file = hf_hub_download(model_name, "tokenizer.model")
     tokenizer = T5TokenizerFast(vocab_file=vocab_file, extra_ids=0)
     if tokenizer.pad_token is None:
         tokenizer.add_special_tokens({"pad_token": "<pad>"})
+
+    if tokenizer.vocab_size < 1000:
+        raise RuntimeError(
+            f"Tokenizer for {model_name} loaded with a degenerate vocab_size="
+            f"{tokenizer.vocab_size} (expected 32000). This is the known "
+            f"transformers>=5 T5 SentencePiece conversion bug — pin "
+            f"transformers<5 (and tokenizers<0.21) and retry."
+        )
     return tokenizer
 
 
