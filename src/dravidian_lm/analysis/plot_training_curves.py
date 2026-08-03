@@ -86,41 +86,18 @@ def main() -> None:
     plt.close()
     print(f"Saved -> {loss_path}")
 
-    # ---- Figure 2: validation perplexity vs. epoch ----
-    plt.figure(figsize=(7, 4.5))
+    # ---- Per-model figures: training loss only ----
     for name, c in curves.items():
-        plt.plot(c["eval_epoch"], c["eval_perplexity"], marker="o", label=name)
-    plt.xlabel("Epoch")
-    plt.ylabel("Validation perplexity")
-    plt.title("Validation perplexity across training")
-    plt.legend()
-    plt.tight_layout()
-    ppl_path = FIGURES_DIR / "validation_perplexity.png"
-    plt.savefig(ppl_path, dpi=200)
-    plt.savefig(FIGURES_DIR / "validation_perplexity.pdf")
-    plt.close()
-    print(f"Saved -> {ppl_path}")
-
-    # ---- Per-model figures: loss + perplexity side by side ----
-    for name, c in curves.items():
-        fig, (ax_loss, ax_ppl) = plt.subplots(1, 2, figsize=(11, 4.5))
-
-        ax_loss.plot(c["train_steps"], c["train_loss"], linewidth=1.0, color="tab:blue")
-        ax_loss.set_xlabel("Training step")
-        ax_loss.set_ylabel("Training loss (cross-entropy, nats)")
-        ax_loss.set_title("Training loss")
-
-        ax_ppl.plot(c["eval_epoch"], c["eval_perplexity"], marker="o", color="tab:orange")
-        ax_ppl.set_xlabel("Epoch")
-        ax_ppl.set_ylabel("Validation perplexity")
-        ax_ppl.set_title("Validation perplexity")
-
-        fig.suptitle(f"dravidian-gpt2-{name}")
-        fig.tight_layout()
+        plt.figure(figsize=(7, 4.5))
+        plt.plot(c["train_steps"], c["train_loss"], linewidth=1.0, color="tab:blue")
+        plt.xlabel("Training step")
+        plt.ylabel("Training loss (cross-entropy, nats)")
+        plt.title(f"dravidian-gpt2-{name}: training loss")
+        plt.tight_layout()
         model_path = FIGURES_DIR / f"{name}_training_curve.png"
-        fig.savefig(model_path, dpi=200)
-        fig.savefig(FIGURES_DIR / f"{name}_training_curve.pdf")
-        plt.close(fig)
+        plt.savefig(model_path, dpi=200)
+        plt.savefig(FIGURES_DIR / f"{name}_training_curve.pdf")
+        plt.close()
         print(f"Saved -> {model_path}")
 
 
