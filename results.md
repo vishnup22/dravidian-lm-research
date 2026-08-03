@@ -88,10 +88,9 @@ Notes:
   non-determinism.
 - **IndicSentiment (n=24 test) and Kannada NER (n=100 train / n=100 test — WikiANN's Kannada
   split is far smaller than the other three languages') are both too small to trust a single run
-  of.** Before putting any of this in the paper as a headline result, either (a) run several
-  seeds and report mean ± stddev, or (b) explicitly caveat every downstream number as
-  single-run/high-variance. Reporting either version of this table as-is, unqualified, risks a
-  reviewer catching the instability themselves.
+  of.** No additional seeds are available (compute/time constraint), so this table is being
+  reported single-run, with an explicit "not averaged, indicative only" caveat wherever it
+  appears in the paper — not silently presented as a stable point estimate.
 - NER F1 at n=1,000 (Telugu, Tamil, Malayalam) is comparatively more trustworthy than Kannada's
   n=100 or IndicSentiment's n=24, but "more trustworthy" here is relative, not absolute.
 - Multi-model downstream scores only exist for Telugu so far; Tamil/Kannada/Malayalam not yet
@@ -187,9 +186,13 @@ released and evaluated, but the limitation needs to be disclosed in the paper re
 - [x] Tokenizer efficiency: all four languages done and saved (Section 2)
 - [x] Downstream: all four monolingual `_full_eval.json` files pushed/pulled and correctly
       attributed (Section 3)
-- [ ] **Downstream reproducibility: re-run at least 2-3 more seeds per language and report
-      mean ± stddev before treating Section 3's numbers as a headline result** — the two runs
-      seen so far for the same nominal seed disagree substantially for Tamil/Kannada/Malayalam
+- [x] **Downstream reproducibility — decided: no additional seeds available (compute/time
+      constraint), so this is being handled as a disclosed limitation, not fixed by
+      averaging.** Section 3's numbers are single-run and must be reported as such in the
+      paper — every downstream table/figure needs an explicit "single seed, not averaged"
+      caveat, and the Limitations section should state plainly that the two runs observed for
+      the same nominal seed disagreed substantially for Tamil/Kannada/Malayalam, so these
+      numbers should be read as indicative, not as a stable point estimate.
 - [ ] Downstream: multilingual model on Tamil, Kannada, Malayalam (only Telugu done)
 - [ ] Resolve the balanced/curriculum data-provenance question in Section 5
 - [ ] Decide how to disclose the multilingual model's training divergence (Section 4) in the
