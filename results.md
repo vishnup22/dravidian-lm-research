@@ -43,12 +43,12 @@ Notes:
 Source: `results/raw/{language}_full_eval.json` (`tokenizer_analysis` key), all four languages.
 Sample: 2,000 test-split sentences per language.
 
-| Language | Ours vocab | Ours fertility | Ours compression | XLM-R fert. | mBERT fert. | mGPT fert. | mGPT compression |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| Telugu | 32,000 | 1.61 | 13.12 | 2.37 | 3.88 | 6.19 | 3.41 |
-| Tamil | 32,000 | 1.66 | 14.80 | 2.42 | 3.73 | 6.98 | 3.53 |
-| Kannada | 32,000 | 1.59 | 13.60 | 2.40 | 3.95 | **16.39** | **1.32** |
-| Malayalam | 32,000 | 1.84 | 14.46 | 2.58 | 5.02 | 7.87 | 3.38 |
+| Language | Ours vocab | Ours fertility | Ours compression | Multi vocab | Multi fertility | Multi compression | XLM-R fert. | mBERT fert. | mGPT fert. | mGPT compression |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Telugu | 32,000 | 1.61 | 13.12 | 64,000 | 1.77 | 11.92 | 2.37 | 3.88 | 6.19 | 3.41 |
+| Tamil | 32,000 | 1.66 | 14.80 | 64,000 | 1.85 | 13.33 | 2.42 | 3.73 | 6.98 | 3.53 |
+| Kannada | 32,000 | 1.59 | 13.60 | 64,000 | 1.77 | 12.27 | 2.40 | 3.95 | **16.39** | **1.32** |
+| Malayalam | 32,000 | 1.84 | 14.46 | 64,000 | 1.97 | 13.49 | 2.58 | 5.02 | 7.87 | 3.38 |
 
 Our dedicated per-language tokenizer beats every multilingual baseline on every language, despite
 a much smaller vocabulary (32K vs. 100K–250K) — consistently the lowest fertility and highest
@@ -58,6 +58,13 @@ worse than mGPT's own numbers on the other three Dravidian languages — suggest
 tokenizer has little to no real Kannada-script coverage and is falling back to heavy
 byte-fragmentation. Worth citing explicitly as a concrete example of why dedicated tokenization
 matters, not just an aggregate stat.
+
+The multilingual model's 64K joint tokenizer is consistently *worse* than each language's
+dedicated 32K tokenizer (higher fertility, lower compression, on every language) despite having
+twice the vocabulary — direct evidence that shared-vocabulary tokenization costs each individual
+language something, even before any model-capacity effects. It's still far better than any of the
+general-purpose multilingual baselines, though, since it was at least trained on this language
+family specifically rather than on hundreds of unrelated languages.
 
 ## 3. Downstream fine-tuning
 
@@ -72,8 +79,11 @@ matches). See the variance note below before treating any of this as stable.
 | Telugu | Monolingual | **0.7083** | 0.6250 | **0.6092** | 0.3039 | 1,000 |
 | Telugu | Multilingual | 0.6667 | 0.5417 | 0.5605 | 0.2699 | 1,000 |
 | Tamil | Monolingual | **0.7917** | 0.4583 | **0.6411** | 0.3838 | 15,000 |
+| Tamil | Multilingual | **0.7917** | 0.4583 | **0.6102** | 0.3853 | 15,000 |
 | Kannada | Monolingual | **0.7917** | 0.5417 | **0.2677** | 0.0341 | 100 |
+| Kannada | Multilingual | 0.6250 | 0.6250 (tie) | **0.1933** | 0.0725 | 100 |
 | Malayalam | Monolingual | **0.8750** | 0.4583 | **0.6579** | 0.3331 | 10,000 |
+| Malayalam | Multilingual | **0.7500** | 0.5000 | **0.6356** | 0.3326 | 10,000 |
 
 IndicXNLI was attempted but is permanently out of scope: `ai4bharat/IndicXNLI` uses a deprecated
 Hub loading script, and none of our four languages are covered by the `facebook/xnli` fallback.
@@ -93,8 +103,15 @@ Notes:
   appears in the paper — not silently presented as a stable point estimate.
 - NER F1 at n=1,000 (Telugu, Tamil, Malayalam) is comparatively more trustworthy than Kannada's
   n=100 or IndicSentiment's n=24, but "more trustworthy" here is relative, not absolute.
-- Multi-model downstream scores only exist for Telugu so far; Tamil/Kannada/Malayalam not yet
-  run for the multilingual model.
+- **Multi model downstream scores are now complete for all four languages.** Pattern: multi
+  matches or trails mono on most language/task pairs (e.g. Malayalam sentiment 0.75 vs. mono's
+  0.875; Kannada NER 0.1933 vs. mono's 0.2677), except Tamil sentiment where they tie at 0.7917.
+  Kannada is the one case where multi's IndicSentiment score exactly **ties mGPT** (0.6250 vs.
+  0.6250) rather than beating it — the only language/task pair in this entire table where our
+  model doesn't outright win. Given the multi model is the one with the training divergence
+  (Section 4) and is effectively only epoch-1-trained, "usually a bit behind mono, still ahead of
+  mGPT on most tasks" is a reasonable reading — but this table carries the same single-run caveat
+  as everything else here.
 
 ## 4. Pretraining convergence (validation split, training-time — not the Section 1 test-split numbers)
 
@@ -193,7 +210,7 @@ released and evaluated, but the limitation needs to be disclosed in the paper re
       caveat, and the Limitations section should state plainly that the two runs observed for
       the same nominal seed disagreed substantially for Tamil/Kannada/Malayalam, so these
       numbers should be read as indicative, not as a stable point estimate.
-- [ ] Downstream: multilingual model on Tamil, Kannada, Malayalam (only Telugu done)
+- [x] Downstream: multilingual model on all four languages (Section 3)
 - [ ] Resolve the balanced/curriculum data-provenance question in Section 5
 - [ ] Decide how to disclose the multilingual model's training divergence (Section 4) in the
       paper — this is a real limitation on the multi-vs-mono comparison, not optional detail
