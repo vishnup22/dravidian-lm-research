@@ -319,8 +319,15 @@ def train_one(
         data_collator=data_collator,
     )
 
+    # If a previous (e.g. timed-out) run left checkpoints in output_dir but never
+    # finished (no log_path -> the skip check above didn't trigger), resume from
+    # the latest one instead of retraining from scratch.
+    has_checkpoint = output_dir.exists() and any(output_dir.glob("checkpoint-*"))
+    if rank == 0 and has_checkpoint:
+        print(f"[{time.strftime('%H:%M:%S')}] resuming {language_name}/{run_name} from latest checkpoint", flush=True)
+
     start = time.time()
-    train_result = trainer.train()
+    train_result = trainer.train(resume_from_checkpoint=has_checkpoint)
     elapsed = time.time() - start
     eval_result = trainer.evaluate()
     trainer.save_model(str(output_dir))

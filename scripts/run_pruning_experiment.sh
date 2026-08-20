@@ -6,7 +6,7 @@
 #SBATCH --cpus-per-task=16
 #SBATCH --gres=gpu:4
 #SBATCH --mem=64G
-#SBATCH --time=8-00:00:00
+#SBATCH --time=7-00:00:00
 #SBATCH --output=logs/dravidian_pruning_%j.out
 #SBATCH --error=logs/dravidian_pruning_%j.err
 
@@ -20,8 +20,14 @@
 # and the telugu_seed2 baseline's config. Baseline reference: 3 epochs /
 # 268k steps / 4 GPUs took 67.1h (results/raw/telugu_seed2.json). Each
 # pruned variant here is ~50% of the data on the same 4-GPU config, so
-# expect roughly ~1.4 days/variant, ~5.6 days for all 4 sequentially -- the
-# 8-day budget above leaves headroom for scoring + eval on top of that.
+# expect roughly ~1.4 days/variant, ~5.6 days for all 4 sequentially, plus
+# scoring + eval on top -- against the cluster's 7-day cap that's tight,
+# with little margin.
+#
+# If it times out mid-run: just `sbatch` this same script again. It's
+# resumable at two levels -- train_one() skips any variant whose result
+# JSON already exists, and (as of this fix) resumes a partially-trained
+# variant from its latest checkpoint instead of restarting it from scratch.
 
 set -euo pipefail
 
