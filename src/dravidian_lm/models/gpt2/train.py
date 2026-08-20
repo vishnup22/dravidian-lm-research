@@ -57,6 +57,29 @@ def parse_args() -> argparse.Namespace:
         required=True,
         help="Tokenizer directory under artifacts/tokenizers/.",
     )
+    parser.add_argument(
+        "--variant",
+        default="full",
+        choices=["full", "easy", "hard", "mid", "random"],
+        help=(
+            "Which pruned training split to use (data/splits/{code}/pruned/"
+            "{code}_train_{variant}.txt). 'full' (default) trains on the "
+            "unpruned split, matching prior behavior exactly."
+        ),
+    )
+    parser.add_argument(
+        "--eval_strategy",
+        default="epoch",
+        choices=["epoch", "steps"],
+        help="'steps' logs eval_loss every --eval_steps, for tokens-vs-BPB curves.",
+    )
+    parser.add_argument("--eval_steps", type=int, default=500)
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Run a single seed instead of the default START_SEED..START_SEED+NUM_SEEDS-1 sweep.",
+    )
     return parser.parse_args()
 
 
@@ -114,12 +137,19 @@ def wait_for_cache_ready(cache_path: Path, ready_path: Path, timeout_s: int = 72
         time.sleep(2)
 
 
-def split_path(language_code: str, split: str) -> Path:
+def split_path(language_code: str, split: str, variant: str = "full") -> Path:
+    if split == "train" and variant != "full":
+        return SPLITS_DIR / language_code / "pruned" / f"{language_code}_train_{variant}.txt"
     return SPLITS_DIR / language_code / f"{language_code}_{split}.txt"
 
 
-def build_or_load_tokenized_dataset(language_code: str, split: str, tokenizer: T5Tokenizer) -> Dataset:
-    cache_name = f"{language_code}_{split}_tokenized_ctx{MAX_LENGTH}_tok32k"
+def build_or_load_tokenized_dataset(
+    language_code: str, split: str, tokenizer: T5Tokenizer, variant: str = "full"
+) -> Dataset:
+    # val/test caches are shared across every variant (same source file) so we
+    # only tag the cache name when it's the pruned train split being loaded.
+    variant_suffix = f"_{variant}" if split == "train" and variant != "full" else ""
+    cache_name = f"{language_code}_{split}{variant_suffix}_tokenized_ctx{MAX_LENGTH}_tok32k"
     cache_path = SPLITS_DIR / "cache" / cache_name
     ready_path = SPLITS_DIR / "cache" / f"{cache_name}.ready"
 
@@ -136,7 +166,7 @@ def build_or_load_tokenized_dataset(language_code: str, split: str, tokenizer: T
         wait_for_cache_ready(cache_path, ready_path)
         return load_from_disk(str(cache_path))
 
-    src = split_path(language_code, split)
+    src = split_path(language_code, split, variant)
     if not src.exists():
         raise FileNotFoundError(f"Missing {split} split for {language_code}: {src}")
 
@@ -174,9 +204,45 @@ def compute_total_steps(
     return steps_per_epoch * num_epochs
 
 
-def train_one(language: str, seed: int, tokenizer_name: str) -> None:
+def bytes_per_token(language_code: str, tokenizer: T5Tokenizer) -> float:
+    """Average UTF-8 bytes per token over the (shared) val split, used to convert
+    eval_loss (nats/token) into bits-per-byte for the tokens-vs-BPB curve."""
+    val_texts = load_lines(split_path(language_code, "val"))
+    enc = tokenizer(val_texts, truncation=True, max_length=MAX_LENGTH, add_special_tokens=False)
+    total_bytes = sum(len(t.encode("utf-8")) for t in val_texts)
+    total_tokens = sum(len(ids) for ids in enc["input_ids"])
+    return total_bytes / max(total_tokens, 1)
+
+
+def build_eval_history(log_history: list[dict], tokens_per_step: float, bpb_ratio: float) -> list[dict]:
+    history = []
+    for entry in log_history:
+        if "eval_loss" not in entry:
+            continue
+        eval_loss = entry["eval_loss"]
+        step = entry.get("step", 0)
+        history.append(
+            {
+                "step": step,
+                "epoch": entry.get("epoch"),
+                "tokens_seen": round(step * tokens_per_step),
+                "eval_loss": eval_loss,
+                "bpb": round((eval_loss / math.log(2)) / bpb_ratio, 6) if bpb_ratio else None,
+            }
+        )
+    return history
+
+
+def train_one(
+    language: str,
+    seed: int,
+    tokenizer_name: str,
+    variant: str = "full",
+    eval_strategy: str = "epoch",
+    eval_steps: int = 500,
+) -> None:
     language_name, language_code = normalize_language(language)
-    run_name = f"seed{seed}"
+    run_name = f"seed{seed}" if variant == "full" else f"seed{seed}_{variant}"
     output_dir = MODELS_DIR / "gpt2" / language_name / run_name
     RAW_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     log_path = RAW_RESULTS_DIR / f"{language_name}_{run_name}.json"
@@ -189,12 +255,12 @@ def train_one(language: str, seed: int, tokenizer_name: str) -> None:
         return
 
     if rank == 0:
-        print(f"[{time.strftime('%H:%M:%S')}] starting {language_name}/{run_name}", flush=True)
+        print(f"[{time.strftime('%H:%M:%S')}] starting {language_name}/{run_name} (variant={variant})", flush=True)
     set_seed(seed)
 
     tokenizer = load_tokenizer(tokenizer_name)
-    train_dataset = build_or_load_tokenized_dataset(language_code, "train", tokenizer)
-    val_dataset = build_or_load_tokenized_dataset(language_code, "val", tokenizer)
+    train_dataset = build_or_load_tokenized_dataset(language_code, "train", tokenizer, variant)
+    val_dataset = build_or_load_tokenized_dataset(language_code, "val", tokenizer, variant)
     model = build_model(vocab_size=len(tokenizer))
     data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
 
@@ -206,10 +272,13 @@ def train_one(language: str, seed: int, tokenizer_name: str) -> None:
         num_gpus=max(1, world_size),
         num_epochs=N_EPOCHS,
     )
+    avg_seq_len = sum(len(ids) for ids in train_dataset["input_ids"]) / max(len(train_dataset), 1)
+    tokens_per_step = PER_DEVICE_BATCH * GRAD_ACCUM * max(1, world_size) * avg_seq_len
     if rank == 0:
         print(
             f"[{time.strftime('%H:%M:%S')}] world_size={world_size}, "
-            f"dataset={len(train_dataset):,}, estimated_total_steps={total_steps:,}",
+            f"dataset={len(train_dataset):,}, estimated_total_steps={total_steps:,}, "
+            f"avg_seq_len={avg_seq_len:.1f}",
             flush=True,
         )
 
@@ -220,9 +289,11 @@ def train_one(language: str, seed: int, tokenizer_name: str) -> None:
         per_device_eval_batch_size=PER_DEVICE_BATCH,
         gradient_accumulation_steps=GRAD_ACCUM,
         num_train_epochs=N_EPOCHS,
-        evaluation_strategy="epoch",
+        evaluation_strategy=eval_strategy,
+        eval_steps=eval_steps,
         logging_steps=200,
-        save_strategy="epoch",
+        save_strategy=eval_strategy,
+        save_steps=eval_steps,
         save_total_limit=2,
         load_best_model_at_end=True,
         metric_for_best_model="eval_loss",
@@ -258,21 +329,27 @@ def train_one(language: str, seed: int, tokenizer_name: str) -> None:
     perplexity = math.exp(eval_loss) if eval_loss is not None else None
 
     if rank == 0:
+        bpb_ratio = bytes_per_token(language_code, tokenizer)
+        eval_history = build_eval_history(trainer.state.log_history, tokens_per_step, bpb_ratio)
+
         log = {
             "language": language_name,
             "language_code": language_code,
             "architecture": "gpt2",
             "tokenizer_name": tokenizer_name,
             "run_name": run_name,
+            "variant": variant,
             "seed": seed,
             "num_epochs": N_EPOCHS,
             "total_steps": total_steps,
+            "tokens_per_step": tokens_per_step,
             "train_runtime_seconds": elapsed,
             "train_loss": train_result.training_loss,
             "eval_loss": eval_loss,
             "perplexity": perplexity,
             "train_metrics": train_result.metrics,
             "eval_metrics": eval_result,
+            "eval_history": eval_history,
         }
         with log_path.open("w", encoding="utf-8") as f:
             json.dump(log, f, indent=2, ensure_ascii=False)
@@ -287,9 +364,17 @@ def train_one(language: str, seed: int, tokenizer_name: str) -> None:
 
 def main() -> None:
     args = parse_args()
-    for seed in range(START_SEED, START_SEED + NUM_SEEDS):
-        print(f"=== {args.language.upper()} seed={seed} ===", flush=True)
-        train_one(args.language, seed, args.tokenizer_name)
+    seeds = [args.seed] if args.seed is not None else range(START_SEED, START_SEED + NUM_SEEDS)
+    for seed in seeds:
+        print(f"=== {args.language.upper()} seed={seed} variant={args.variant} ===", flush=True)
+        train_one(
+            args.language,
+            seed,
+            args.tokenizer_name,
+            variant=args.variant,
+            eval_strategy=args.eval_strategy,
+            eval_steps=args.eval_steps,
+        )
     print(f"=== {args.language.upper()} DONE ===", flush=True)
 
 

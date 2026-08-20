@@ -1,0 +1,43 @@
+experiment_name: telugu-pruning-scaling
+research_question: >
+  Does pruning 30-50% of low-resource pretraining data using a small
+  reference model preserve 100%-baseline validation BPB, i.e. does it break
+  standard power-law scaling?
+language: telugu
+language_code: te
+architecture: gpt2
+tokenizer_name: te
+model_config: configs/models/gpt2-small.yaml
+data_config: configs/data/dravidian-mono.yaml
+
+reference_model:
+  source: huggingface_hub
+  model_id: pulipakav-1/dravidian-gpt2-telugu   # existing seed2 checkpoint, used to score data/splits/te/te_train.txt
+
+splits:
+  easy:   { rule: "loss <= median",              fraction: 0.50 }
+  hard:   { rule: "loss > median",                fraction: 0.50 }
+  mid:    { rule: "p40 <= loss < p90",            fraction: 0.50 }  # Pareto core-set: cuts bottom 40% trivial + top 10% noisy
+  random: { rule: "uniform random, seed 42",      fraction: 0.50 }
+
+training:
+  seed: 1              # single seed per variant (baseline already exists at seed2)
+  eval_strategy: steps
+  eval_steps: 500
+  reused_from_baseline: [n_epochs, learning_rate, weight_decay, warmup_steps, lr_scheduler_type, batch_size, grad_accum]
+
+baseline:
+  reused: true
+  source: results/raw/telugu_seed2.json   # 100% run, not re-trained
+  eval_loss: 3.7635
+  perplexity: 43.10
+
+evaluation:
+  held_out_split: data/splits/te/te_test.txt   # identical across baseline + all variants
+  metrics: [bpb, perplexity, wikiann_ner_f1]
+
+deliverable:
+  plot: results/plots/telugu_pruning_scaling_bpb.png
+  x_axis: tokens_trained
+  y_axis: validation_bpb
+  primary_comparison: [full, mid, random]

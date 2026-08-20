@@ -1,6 +1,7 @@
 accelerate
 datasets
 evaluate
+matplotlib
 numpy
 seqeval
 sentencepiece

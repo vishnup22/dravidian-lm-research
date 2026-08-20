@@ -18,6 +18,10 @@ Current focus:
 - GPT-2 pretraining as the first implemented architecture
 - result logging for cross-language and cross-run comparison
 
+- data-pruning scaling-law study (Telugu): does pruning 30-50% of the
+  pretraining corpus with a small reference model preserve baseline BPB? See
+  [docs/pruning_experiment.md](./docs/pruning_experiment.md)
+
 Planned direction:
 
 - additional architectures beyond GPT-2
@@ -50,8 +54,11 @@ Planned direction:
 - [src/dravidian_lm/tokenization](./src/dravidian_lm/tokenization): tokenizer training
 - [src/dravidian_lm/models/gpt2](./src/dravidian_lm/models/gpt2): GPT-2 training
 - [src/dravidian_lm/analysis](./src/dravidian_lm/analysis): result summarization
+- [src/dravidian_lm/pruning](./src/dravidian_lm/pruning): reference-model data scoring and pruning
 - [scripts/train_gpt.sh](./scripts/train_gpt.sh): cluster launcher
+- [scripts/run_pruning_experiment.sh](./scripts/run_pruning_experiment.sh): pruning-experiment cluster launcher
 - [docs/reproducibility.md](./docs/reproducibility.md): execution and layout notes
+- [docs/pruning_experiment.md](./docs/pruning_experiment.md): data-pruning scaling-law methodology
 - [configs](./configs): experiment templates for future config-driven runs
 
 ## Current Models
