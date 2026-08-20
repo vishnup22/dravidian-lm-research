@@ -50,6 +50,13 @@ python -m dravidian_lm.pruning.score --language_code "${LANG_CODE}" --batch_size
 echo "=== 2/5: building easy/hard/mid/random pruned splits ==="
 python -m dravidian_lm.pruning.make_splits --language_code "${LANG_CODE}"
 
+# train.py loads artifacts/tokenizers/${TOKENIZER}/tokenizer.model unconditionally
+# and does not train it itself -- ensure it exists before launching accelerate.
+# train_tokenizer.py skips training if the .model file is already there, so
+# this is a no-op on reruns / when a baseline run already produced it.
+echo "=== ensuring tokenizer exists (${TOKENIZER}) ==="
+python -m dravidian_lm.tokenization.train_tokenizer --lang "${TOKENIZER}"
+
 echo "=== 3/5: training each variant (seed=${SEED}, 4 GPUs) ==="
 for variant in easy hard mid random; do
   accelerate launch --num_processes 4 -m dravidian_lm.models.gpt2.train \
