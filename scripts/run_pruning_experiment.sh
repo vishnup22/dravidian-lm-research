@@ -4,21 +4,24 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
-#SBATCH --gres=gpu:1
+#SBATCH --gres=gpu:4
 #SBATCH --mem=64G
-#SBATCH --time=14-00:00:00
+#SBATCH --time=8-00:00:00
 #SBATCH --output=logs/dravidian_pruning_%j.out
 #SBATCH --error=logs/dravidian_pruning_%j.err
 
-# Data-pruning scaling-law experiment (Telugu). See docs/pruning_experiment.md.
+# Data-pruning scaling-law experiment (Telugu only). See docs/pruning_experiment.md.
 #
 # Trains 4 GPT-2s from scratch on 50% pruned slices of the existing Telugu
 # train split (easy / hard / mid / random) and compares them, plus the
 # existing 100% baseline (telugu_seed2), on held-out BPB and WikiANN NER.
 #
-# Each variant is trained on a single GPU here; scale --gres/--nodes and add
-# `accelerate launch --num_processes N` (as scripts/train_gpt.sh does) if you
-# want multi-GPU per run.
+# Each variant trains on 4 GPUs via accelerate launch, matching train_gpt.sh
+# and the telugu_seed2 baseline's config. Baseline reference: 3 epochs /
+# 268k steps / 4 GPUs took 67.1h (results/raw/telugu_seed2.json). Each
+# pruned variant here is ~50% of the data on the same 4-GPU config, so
+# expect roughly ~1.4 days/variant, ~5.6 days for all 4 sequentially -- the
+# 8-day budget above leaves headroom for scoring + eval on top of that.
 
 set -euo pipefail
 
@@ -41,9 +44,9 @@ python -m dravidian_lm.pruning.score --language_code "${LANG_CODE}"
 echo "=== 2/5: building easy/hard/mid/random pruned splits ==="
 python -m dravidian_lm.pruning.make_splits --language_code "${LANG_CODE}"
 
-echo "=== 3/5: training each variant (seed=${SEED}) ==="
+echo "=== 3/5: training each variant (seed=${SEED}, 4 GPUs) ==="
 for variant in easy hard mid random; do
-  python -m dravidian_lm.models.gpt2.train \
+  accelerate launch --num_processes 4 -m dravidian_lm.models.gpt2.train \
     --language "${LANGUAGE}" \
     --tokenizer_name "${TOKENIZER}" \
     --variant "${variant}" \

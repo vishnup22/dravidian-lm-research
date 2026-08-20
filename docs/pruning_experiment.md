@@ -82,7 +82,7 @@ python -m dravidian_lm.pruning.score --language_code te
 python -m dravidian_lm.pruning.make_splits --language_code te
 
 for variant in easy hard mid random; do
-  python -m dravidian_lm.models.gpt2.train \
+  accelerate launch --num_processes 4 -m dravidian_lm.models.gpt2.train \
     --language telugu --tokenizer_name te --variant "$variant" \
     --seed 1 --eval_strategy steps --eval_steps 500
 done
