@@ -29,7 +29,7 @@
 # JSON already exists, and (as of this fix) resumes a partially-trained
 # variant from its latest checkpoint instead of restarting it from scratch.
 
-set -euo pipefail
+set -eo pipefail  # not -u: conda's activation hook references unset vars internally
 
 mkdir -p logs
 
