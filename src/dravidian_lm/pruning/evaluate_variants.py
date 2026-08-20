@@ -72,8 +72,10 @@ def load_variant(variant: str, args: argparse.Namespace, device: str):
 
     tokenizer = load_our_tokenizer(args.tokenizer_name)
     dtype = torch.float16 if device.startswith("cuda") else torch.float32
-    model = GPT2LMHeadModel.from_pretrained(str(checkpoint_dir), dtype=dtype)
-    model.to(device)
+    # See evaluation/run_eval.py::load_model_and_tokenizer for why dtype= isn't
+    # passed to from_pretrained directly.
+    model = GPT2LMHeadModel.from_pretrained(str(checkpoint_dir))
+    model.to(device=device, dtype=dtype)
     model.eval()
     return model, tokenizer, str(checkpoint_dir)
 

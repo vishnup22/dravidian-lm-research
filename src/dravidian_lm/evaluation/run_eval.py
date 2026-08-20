@@ -136,8 +136,12 @@ def load_model_and_tokenizer(model_name: str, device: str):
             tokenizer.pad_token = tokenizer.eos_token
 
     dtype = torch.float16 if device.startswith("cuda") else torch.float32
-    model = AutoModelForCausalLM.from_pretrained(model_name, dtype=dtype)
-    model.to(device)
+    # Cast after load rather than passing dtype= to from_pretrained: on some
+    # transformers versions that kwarg leaks into AutoConfig's unused_kwargs and
+    # crashes the first time the config gets repr'd/logged (TypeError: Object of
+    # type dtype is not JSON serializable).
+    model = AutoModelForCausalLM.from_pretrained(model_name)
+    model.to(device=device, dtype=dtype)
     model.eval()
 
     # Override generation token IDs to match the custom tokeniser
