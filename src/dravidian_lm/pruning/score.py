@@ -24,7 +24,7 @@ from dravidian_lm.evaluation.perplexity import score_lines
 from dravidian_lm.evaluation.run_eval import MODEL_ID, load_model_and_tokenizer
 
 
-READ_CHUNK_LINES = 512
+READ_CHUNK_LINES = 2048
 
 
 def parse_args() -> argparse.Namespace:
@@ -42,7 +42,15 @@ def parse_args() -> argparse.Namespace:
         default=MODEL_ID,
         help="HF Hub id or local path of the reference scoring model.",
     )
-    parser.add_argument("--batch_size", type=int, default=8)
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=64,
+        help=(
+            "Inference-only (no backward pass/optimizer state), so this can be much "
+            "larger than a training batch size -- raise further if GPU memory allows."
+        ),
+    )
     parser.add_argument("--device", default=None, help="Device override, auto-detects if omitted.")
     parser.add_argument(
         "--max_lines",

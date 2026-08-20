@@ -45,7 +45,7 @@ TOKENIZER=te
 SEED=1
 
 echo "=== 1/5: scoring train split with the reference model ==="
-python -m dravidian_lm.pruning.score --language_code "${LANG_CODE}"
+python -m dravidian_lm.pruning.score --language_code "${LANG_CODE}" --batch_size 64
 
 echo "=== 2/5: building easy/hard/mid/random pruned splits ==="
 python -m dravidian_lm.pruning.make_splits --language_code "${LANG_CODE}"
