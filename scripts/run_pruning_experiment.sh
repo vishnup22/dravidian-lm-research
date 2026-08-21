@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=dravidian-pruning
-#SBATCH --partition=gpu-month-long
+#SBATCH --partition=gpu-week-long
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
