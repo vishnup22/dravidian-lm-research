@@ -25,9 +25,11 @@
 # with little margin.
 #
 # If it times out mid-run: just `sbatch` this same script again. It's
-# resumable at two levels -- train_one() skips any variant whose result
-# JSON already exists, and (as of this fix) resumes a partially-trained
-# variant from its latest checkpoint instead of restarting it from scratch.
+# resumable at three levels -- steps 1/2 (scoring + pruned-split building)
+# skip themselves if their output files already exist, train_one() skips
+# any variant whose result JSON already exists, and resumes a
+# partially-trained variant from its latest checkpoint instead of
+# restarting it from scratch.
 
 set -eo pipefail  # not -u: conda's activation hook references unset vars internally
 
@@ -44,11 +46,22 @@ LANGUAGE=telugu
 TOKENIZER=te
 SEED=1
 
+SCORES_FILE="${PWD}/data/splits/${LANG_CODE}/${LANG_CODE}_train_scores.txt"
 echo "=== 1/5: scoring train split with the reference model ==="
-python -m dravidian_lm.pruning.score --language_code "${LANG_CODE}" --batch_size 64
+if [[ -s "${SCORES_FILE}" ]]; then
+  echo "  scores already exist at ${SCORES_FILE}, skipping (delete it to force a rescore)"
+else
+  python -m dravidian_lm.pruning.score --language_code "${LANG_CODE}" --batch_size 64
+fi
 
+PRUNED_DIR="${PWD}/data/splits/${LANG_CODE}/pruned"
 echo "=== 2/5: building easy/hard/mid/random pruned splits ==="
-python -m dravidian_lm.pruning.make_splits --language_code "${LANG_CODE}"
+if [[ -s "${PRUNED_DIR}/${LANG_CODE}_train_easy.txt" && -s "${PRUNED_DIR}/${LANG_CODE}_train_hard.txt" \
+      && -s "${PRUNED_DIR}/${LANG_CODE}_train_mid.txt" && -s "${PRUNED_DIR}/${LANG_CODE}_train_random.txt" ]]; then
+  echo "  pruned splits already exist under ${PRUNED_DIR}, skipping (delete them to force a rebuild)"
+else
+  python -m dravidian_lm.pruning.make_splits --language_code "${LANG_CODE}"
+fi
 
 # train.py loads artifacts/tokenizers/${TOKENIZER}/tokenizer.model unconditionally
 # and does not train it itself -- ensure it exists before launching accelerate.
