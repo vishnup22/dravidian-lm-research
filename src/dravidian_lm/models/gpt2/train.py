@@ -289,7 +289,7 @@ def train_one(
         per_device_eval_batch_size=PER_DEVICE_BATCH,
         gradient_accumulation_steps=GRAD_ACCUM,
         num_train_epochs=N_EPOCHS,
-        evaluation_strategy=eval_strategy,
+        eval_strategy=eval_strategy,
         eval_steps=eval_steps,
         logging_steps=200,
         save_strategy=eval_strategy,
