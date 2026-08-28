@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Optional
 
 import torch
+import torch.nn.functional as F
 from transformers import GPT2LMHeadModel, PreTrainedTokenizer
 
 from dravidian_lm.paths import SPLITS_DIR
@@ -110,6 +111,57 @@ def eval_perplexity(
         perplexity=round(ppl, 4),
         bpb=round(bpb, 6),
     )
+
+
+@torch.no_grad()
+def score_lines(
+    texts: list[str],
+    tokenizer: PreTrainedTokenizer,
+    model: GPT2LMHeadModel,
+    device: str,
+    batch_size: int = 8,
+) -> list[float]:
+    """Compute per-line cross-entropy loss (nats/token) for use as a data-pruning score.
+
+    Unlike `eval_perplexity`, which returns one loss averaged over an entire
+    batch (the value HF's `outputs.loss` reports), this returns one loss per
+    input line so lines can be ranked/pruned individually. Padding never
+    contributes to a line's loss even though lines are batched together.
+    """
+    model.eval()
+    scores: list[float] = []
+
+    for i in range(0, len(texts), batch_size):
+        batch = texts[i : i + batch_size]
+        enc = tokenizer(
+            batch,
+            truncation=True,
+            max_length=MAX_LENGTH,
+            padding=True,
+            return_tensors="pt",
+            add_special_tokens=False,
+        )
+        input_ids = enc["input_ids"].to(device)
+        attention_mask = enc["attention_mask"].to(device)
+
+        outputs = model(input_ids=input_ids, attention_mask=attention_mask)
+        logits = outputs.logits
+
+        # Shift so position t predicts token t+1, matching GPT-2's internal convention.
+        shift_logits = logits[:, :-1, :].contiguous()
+        shift_labels = input_ids[:, 1:].contiguous()
+        shift_mask = attention_mask[:, 1:].contiguous().float()
+
+        token_nll = F.cross_entropy(
+            shift_logits.transpose(1, 2), shift_labels, reduction="none"
+        )
+        token_nll = token_nll * shift_mask
+
+        per_line_tokens = shift_mask.sum(dim=1).clamp(min=1.0)
+        per_line_nll = token_nll.sum(dim=1) / per_line_tokens
+        scores.extend(per_line_nll.cpu().tolist())
+
+    return scores
 
 
 def run_perplexity_suite(

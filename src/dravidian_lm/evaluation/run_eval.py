@@ -119,7 +119,15 @@ def parse_args() -> argparse.Namespace:
 def load_model_and_tokenizer(model_name: str, device: str):
     print(f"Loading model: {model_name}")
     if model_name == MODEL_ID:
-        tokenizer = T5Tokenizer.from_pretrained(model_name, use_fast=False, extra_ids=0)
+        # T5Tokenizer.from_pretrained() auto-resolves vocab_files_names["vocab_file"],
+        # which for T5Tokenizer is literally "spiece.model" -- but this repo's raw
+        # SentencePiece file is named "tokenizer.model" (matching how models.gpt2.train
+        # saves it), so auto-resolution silently returns None. Download the known
+        # filename explicitly instead, same pattern as models.gpt2.train.load_tokenizer.
+        from huggingface_hub import hf_hub_download
+
+        vocab_path = hf_hub_download(model_name, "tokenizer.model")
+        tokenizer = T5Tokenizer(vocab_file=vocab_path, extra_ids=0)
         if tokenizer.pad_token is None:
             tokenizer.add_special_tokens({"pad_token": "<pad>"})
     else:
@@ -128,8 +136,12 @@ def load_model_and_tokenizer(model_name: str, device: str):
             tokenizer.pad_token = tokenizer.eos_token
 
     dtype = torch.float16 if device.startswith("cuda") else torch.float32
-    model = AutoModelForCausalLM.from_pretrained(model_name, dtype=dtype)
-    model.to(device)
+    # Cast after load rather than passing dtype= to from_pretrained: on some
+    # transformers versions that kwarg leaks into AutoConfig's unused_kwargs and
+    # crashes the first time the config gets repr'd/logged (TypeError: Object of
+    # type dtype is not JSON serializable).
+    model = AutoModelForCausalLM.from_pretrained(model_name)
+    model.to(device=device, dtype=dtype)
     model.eval()
 
     # Override generation token IDs to match the custom tokeniser

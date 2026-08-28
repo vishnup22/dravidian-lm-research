@@ -157,8 +157,12 @@ def _load_seq_clf_model(
         model_name,
         config=config,
         ignore_mismatched_sizes=True,
-        torch_dtype=dtype,
     )
+    # Cast after load rather than passing torch_dtype=/dtype= to from_pretrained:
+    # that kwarg leaks into AutoConfig's unused_kwargs and crashes the first time
+    # the config gets repr'd/logged (TypeError: Object of type dtype is not JSON
+    # serializable) on some transformers versions.
+    model = model.to(dtype=dtype)
     model.config.pad_token_id = pad_token_id
     return model
 
@@ -328,8 +332,9 @@ def run_wikiann_ner(
         pad_token_id=tokenizer.pad_token_id,
     )
     model = GPT2ForTokenClassification.from_pretrained(
-        model_name, config=config, ignore_mismatched_sizes=True, torch_dtype=dtype
+        model_name, config=config, ignore_mismatched_sizes=True
     )
+    model = model.to(dtype=dtype)  # see _load_seq_clf_model for why not torch_dtype=
 
     collator = DataCollatorForTokenClassification(tokenizer=tokenizer)
     device = _device()
